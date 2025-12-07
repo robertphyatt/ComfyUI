@@ -82,15 +82,10 @@ class SpriteClothingGenerator:
             base_frames = split_spritesheet(base_spritesheet, frames_dir, GRID_SIZE)
             print(f"   Split into {len(base_frames)} frames")
 
-            # Step 2: Extract clothing from reference
-            print("\n✂️  Step 2: Extracting clothing from reference...")
-            clothing_ref_path = self.temp_dir / "reference_clothing_only.png"
-            extract_clothing_from_reference(
-                reference_frame,
-                clothing_ref_path,
-                model=U2NET_MODEL
-            )
-            print(f"   Saved clothing-only reference to {clothing_ref_path.name}")
+            # Step 2: Use reference frame directly (U2-Net doesn't work well with pixel art)
+            print("\n✂️  Step 2: Using reference frame as clothing template...")
+            clothing_ref_path = reference_frame
+            print(f"   Using reference: {clothing_ref_path.name}")
 
             # Step 3: Generate OpenPose skeletons for all frames
             print("\n🦴 Step 3: Generating OpenPose skeletons...")
