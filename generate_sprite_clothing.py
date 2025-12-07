@@ -30,9 +30,13 @@ def start_comfyui_server():
     """
     print("Starting ComfyUI server...")
 
+    # Use venv's Python if it exists, otherwise use current Python
+    venv_python = Path(__file__).parent / ".venv" / "bin" / "python"
+    python_exe = str(venv_python) if venv_python.exists() else sys.executable
+
     # Start main.py in the current directory
     process = subprocess.Popen(
-        [sys.executable, "main.py"],
+        [python_exe, "main.py"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True

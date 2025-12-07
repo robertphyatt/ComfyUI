@@ -138,7 +138,7 @@ class SpriteClothingGenerator:
 
         for i, frame_path in enumerate(frame_paths):
             # Upload frame to ComfyUI
-            filename = self.client.upload_image(frame_path, subfolder="temp")
+            filename = self.client.upload_image(frame_path, subfolder="")
 
             # Build and queue workflow
             workflow = build_openpose_preprocessing_workflow(
@@ -186,11 +186,11 @@ class SpriteClothingGenerator:
         clothing_frames = []
 
         # Upload clothing reference once
-        ref_filename = self.client.upload_image(clothing_reference, subfolder="temp")
+        ref_filename = self.client.upload_image(clothing_reference, subfolder="")
 
         for i, pose_path in enumerate(pose_frames):
             # Upload pose skeleton
-            pose_filename = self.client.upload_image(pose_path, subfolder="temp")
+            pose_filename = self.client.upload_image(pose_path, subfolder="")
 
             # Build and queue workflow
             workflow = build_clothing_generation_workflow(
