@@ -2,7 +2,7 @@
 
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from sprite_clothing_gen.comfy_client import ComfyUIClient
 from sprite_clothing_gen.spritesheet_utils import split_spritesheet, reassemble_spritesheet
 from sprite_clothing_gen.clothing_extractor import extract_clothing_from_reference
@@ -147,11 +147,13 @@ class SpriteClothingGenerator:
             )
             prompt_id = self.client.queue_prompt(workflow)
 
-            # Wait for completion
-            self._wait_for_completion(prompt_id)
+            # Wait for completion and get output filename
+            history = self._wait_for_completion(prompt_id)
+
+            # Extract output filename from history
+            output_filename = self._extract_output_filename(history)
 
             # Download result
-            output_filename = f"pose_{i:02d}_00001_.png"  # ComfyUI naming convention
             pose_path = pose_dir / f"pose_{i:02d}.png"
             self.client.download_image(output_filename, output_dir=pose_dir)
 
@@ -201,11 +203,13 @@ class SpriteClothingGenerator:
             )
             prompt_id = self.client.queue_prompt(workflow)
 
-            # Wait for completion
-            self._wait_for_completion(prompt_id)
+            # Wait for completion and get output filename
+            history = self._wait_for_completion(prompt_id)
+
+            # Extract output filename from history
+            output_filename = self._extract_output_filename(history)
 
             # Download result
-            output_filename = f"clothing_{i:02d}_00001_.png"
             clothing_path = clothing_dir / f"clothing_{i:02d}.png"
             self.client.download_image(output_filename, output_dir=clothing_dir)
 
@@ -219,12 +223,15 @@ class SpriteClothingGenerator:
 
         return clothing_frames
 
-    def _wait_for_completion(self, prompt_id: str, timeout: int = 300) -> None:
+    def _wait_for_completion(self, prompt_id: str, timeout: int = 300) -> Dict[str, Any]:
         """Wait for a prompt to complete execution.
 
         Args:
             prompt_id: ID of the prompt to wait for
             timeout: Maximum seconds to wait
+
+        Returns:
+            History dict containing outputs
 
         Raises:
             RuntimeError: If execution times out or fails
@@ -239,12 +246,38 @@ class SpriteClothingGenerator:
             if history is not None:
                 # Check if execution completed
                 if "outputs" in history:
-                    return
+                    return history
                 # Check if execution failed
                 if "error" in history:
                     raise RuntimeError(f"Execution failed: {history['error']}")
 
             time.sleep(1)
+
+    def _extract_output_filename(self, history: Dict[str, Any]) -> str:
+        """Extract output filename from ComfyUI history.
+
+        Args:
+            history: History dict from ComfyUI
+
+        Returns:
+            Filename of the generated image
+
+        Raises:
+            RuntimeError: If filename cannot be extracted
+        """
+        try:
+            # Navigate history structure to find the SaveImage node output
+            outputs = history.get("outputs", {})
+            # Find the first SaveImage node (typically last node in workflow)
+            for node_id, node_output in outputs.items():
+                if "images" in node_output:
+                    images = node_output["images"]
+                    if images and len(images) > 0:
+                        return images[0]["filename"]
+
+            raise RuntimeError("No output image found in history")
+        except (KeyError, IndexError, TypeError) as e:
+            raise RuntimeError(f"Failed to extract filename from history: {e}")
 
     def _cleanup_temp_files(self) -> None:
         """Remove temporary files."""
