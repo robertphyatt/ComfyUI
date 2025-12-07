@@ -1,6 +1,5 @@
 """ComfyUI API client for workflow execution."""
 
-import json
 import uuid
 import requests
 from typing import Dict, Any, Optional
@@ -71,7 +70,7 @@ class ComfyUIClient:
         Returns:
             History dict if available, None otherwise
         """
-        response = self.session.get(f"{self.api_url}/history/{prompt_id}")
+        response = self.session.get(f"{self.api_url}/history/{prompt_id}", timeout=10)
         if response.status_code == 200:
             history = response.json()
             return history.get(prompt_id)
@@ -121,7 +120,7 @@ class ComfyUIClient:
             RuntimeError: If download fails
         """
         params = {'filename': filename, 'subfolder': subfolder, 'type': 'output'}
-        response = self.session.get(f"{self.base_url}/view", params=params)
+        response = self.session.get(f"{self.base_url}/view", params=params, timeout=60)
 
         if response.status_code != 200:
             raise RuntimeError(f"Failed to download image: {response.text}")
