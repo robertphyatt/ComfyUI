@@ -244,12 +244,23 @@ class SpriteClothingGenerator:
 
             history = self.client.get_history(prompt_id)
             if history is not None:
-                # Check if execution completed
-                if "outputs" in history:
-                    return history
+                # Check status
+                status = history.get("status", {})
+                status_str = status.get("status_str", "")
+
                 # Check if execution failed
-                if "error" in history:
-                    raise RuntimeError(f"Execution failed: {history['error']}")
+                if status_str == "error":
+                    messages = status.get("messages", [])
+                    error_msg = "Unknown error"
+                    for msg in messages:
+                        if msg[0] == "execution_error":
+                            error_msg = str(msg[1])
+                            break
+                    raise RuntimeError(f"Workflow execution failed: {error_msg}")
+
+                # Check if execution completed successfully
+                if "outputs" in history and history["outputs"]:
+                    return history
 
             time.sleep(1)
 
