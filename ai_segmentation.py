@@ -10,7 +10,17 @@ from typing import Dict, Any
 from rle_utils import decode_rle
 
 def encode_image_base64(image: Image.Image) -> str:
-    """Encode PIL image as base64 string."""
+    """Encode PIL image as base64 string.
+
+    Args:
+        image: PIL Image (must be 256x256)
+
+    Raises:
+        ValueError: If image is not 256x256
+    """
+    if image.size != (256, 256):
+        raise ValueError(f"Image must be 256x256, got {image.size}")
+
     buffered = io.BytesIO()
     image.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
@@ -33,6 +43,9 @@ def call_ollama_segmentation(clothed_frame_256: Image.Image) -> np.ndarray:
 Classify each pixel as either:
 - CLOTHING (1): New armor/clothing pixels (brown leather armor, equipment, etc.)
 - BASE (0): Original gray character pixels showing through (gray skin/head visible through helmet)
+- TRANSPARENT pixels (alpha < 50): Classify as BASE (0)
+
+Focus on RGB color values, not alpha channel. Transparent regions are background, not clothing.
 
 Output as run-length encoding to compress the 65,536 pixel mask:
 {
@@ -63,9 +76,12 @@ Output ONLY valid JSON, no other text."""
         }
     }
 
-    print("   Calling Ollama for semantic segmentation...")
-    response = requests.post(url, json=payload, timeout=600)
-    response.raise_for_status()
+    try:
+        print("   Calling Ollama for semantic segmentation...")
+        response = requests.post(url, json=payload, timeout=600)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        raise RuntimeError(f"Failed to call Ollama API: {e}\nURL: {url}") from e
 
     result = response.json()
     response_text = result.get("response", "")
