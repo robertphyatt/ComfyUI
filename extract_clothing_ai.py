@@ -42,6 +42,7 @@ def upscale_for_analysis(image: Image.Image, scale: int = 8) -> Image.Image:
 
 def call_ollama_bounding_box(base_frame: Image.Image, clothed_frame: Image.Image,
                              user_guidance: str = None,
+                             ai_bounding_guidance: str = None,
                              max_retries: int = 100) -> Dict[str, Any]:
     """PHASE 1: Call Ollama vision API to get bounding boxes for BASE regions.
 
@@ -52,6 +53,7 @@ def call_ollama_bounding_box(base_frame: Image.Image, clothed_frame: Image.Image
         base_frame: Base character frame
         clothed_frame: Clothed character frame
         user_guidance: User-provided guidance on what base parts are visible
+        ai_bounding_guidance: Additional guidance for AI on bounding box constraints
         max_retries: Maximum retry attempts on timeout
 
     Returns:
@@ -71,6 +73,15 @@ def call_ollama_bounding_box(base_frame: Image.Image, clothed_frame: Image.Image
 
 USER GUIDANCE (CRITICAL - FOLLOW THIS EXACTLY):
 {user_guidance}
+"""
+
+    # Build AI bounding box guidance section
+    ai_guidance_section = ""
+    if ai_bounding_guidance:
+        ai_guidance_section = f"""
+
+AI BOUNDING BOX CONSTRAINTS (CRITICAL - FOLLOW THESE CONSTRAINTS):
+{ai_bounding_guidance}
 """
 
     # Prepare prompt for bounding box detection
@@ -114,7 +125,7 @@ CRITICAL: Provide SIMPLE RECTANGULAR BOXES, not precise boundaries.
 - Draw these boxes AROUND visible BASE parts (like the gray head)
 - Make the boxes SLIGHTLY LARGER than the region to ensure full coverage
 - Add ~20-30 pixels of padding on each side to avoid missing edges
-{guidance_section}
+{ai_guidance_section}{guidance_section}
 Output ONLY valid JSON, no other text."""
 
     url = "http://localhost:11434/api/generate"
@@ -333,8 +344,9 @@ def create_mask_from_hybrid(base_frame: Image.Image, clothed_frame: Image.Image,
 
 
 def extract_clothing_with_ai(base_frame: Image.Image, clothed_frame: Image.Image,
-                            user_guidance: str = None, frame_num: int = 0,
-                            tolerance: int = 15, max_retries: int = 3,
+                            user_guidance: str = None, ai_bounding_guidance: str = None,
+                            frame_num: int = 0,
+                            tolerance: int = 10, max_retries: int = 3,
                             return_pixel_count: bool = False):
     """Extract clothing using hybrid AI + algorithmic approach.
 
@@ -347,8 +359,9 @@ def extract_clothing_with_ai(base_frame: Image.Image, clothed_frame: Image.Image
         base_frame: Base character frame
         clothed_frame: Clothed character frame
         user_guidance: User-provided guidance on what base parts to remove
+        ai_bounding_guidance: Additional guidance for AI on bounding box constraints
         frame_num: Frame number for debug output
-        tolerance: Color matching tolerance (0-255, default: 15)
+        tolerance: Color matching tolerance (0-255, default: 10)
         max_retries: Maximum retry attempts if result is suspicious (default: 3)
 
     Returns:
@@ -368,7 +381,7 @@ def extract_clothing_with_ai(base_frame: Image.Image, clothed_frame: Image.Image
             print(f"\n   🔄 Retry attempt {attempt + 1}/{max_retries} (previous result was suspicious)")
 
         # PHASE 1: Get bounding boxes from AI
-        bounding_data = call_ollama_bounding_box(base_frame, clothed_frame, user_guidance)
+        bounding_data = call_ollama_bounding_box(base_frame, clothed_frame, user_guidance, ai_bounding_guidance)
 
         # PHASE 2 & 3: Sample colors and create mask (combined in create_mask_from_hybrid)
         body_mask = create_mask_from_hybrid(base_frame, clothed_frame, bounding_data, frame_num, tolerance)
@@ -548,6 +561,20 @@ Example:
         help='User guidance on which base parts to remove (e.g., "Only the gray head is visible and should be removed")'
     )
 
+    parser.add_argument(
+        '--ai-guidance',
+        type=str,
+        default=None,
+        help='AI-specific guidance for bounding box constraints (e.g., "Only draw boxes around the HEAD. Exclude shoulders, neck, and torso.")'
+    )
+
+    parser.add_argument(
+        '--tolerance',
+        type=int,
+        default=10,
+        help='Color matching tolerance for compression artifacts (default: 10)'
+    )
+
     args = parser.parse_args()
 
     # Validate inputs
@@ -564,6 +591,8 @@ Example:
     print(f"   Clothed: {args.clothed}")
     if args.guidance:
         print(f"   Guidance: {args.guidance}")
+    if args.ai_guidance:
+        print(f"   AI Guidance: {args.ai_guidance}")
 
     # Check Ollama availability
     try:
@@ -600,7 +629,7 @@ Example:
 
         # Extract clothing using AI (no retry on first pass)
         clothing_frame, pixels_removed = extract_clothing_with_ai(
-            base_frame, aligned_clothed, args.guidance, i,
+            base_frame, aligned_clothed, args.guidance, args.ai_guidance, i,
             tolerance=args.tolerance, max_retries=1, return_pixel_count=True
         )
         clothing_frames[i] = clothing_frame
@@ -641,7 +670,7 @@ Example:
 
             # Retry with fresh AI call
             clothing_frame, pixels_removed = extract_clothing_with_ai(
-                base_frame, aligned_clothed, args.guidance, i,
+                base_frame, aligned_clothed, args.guidance, args.ai_guidance, i,
                 tolerance=args.tolerance, max_retries=1, return_pixel_count=True
             )
 
