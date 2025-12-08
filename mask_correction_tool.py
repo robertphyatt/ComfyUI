@@ -8,6 +8,33 @@ from pathlib import Path
 from PIL import Image
 import cv2
 
+# Alpha threshold for transparent background detection
+ALPHA_THRESHOLD = 128
+
+
+def remove_transparent_background(mask: np.ndarray, base_img_rgba: np.ndarray) -> np.ndarray:
+    """Remove any clothing labels from transparent background pixels.
+
+    Args:
+        mask: Binary mask (H, W) uint8, where 1=clothing
+        base_img_rgba: Base image with alpha channel (H, W, 4) uint8
+
+    Returns:
+        Cleaned mask with transparent pixels zeroed out
+    """
+    if base_img_rgba.shape[2] != 4:
+        # No alpha channel, return mask unchanged
+        return mask
+
+    # Get alpha channel
+    alpha = base_img_rgba[:, :, 3]
+
+    # Zero out mask where background is transparent
+    cleaned_mask = mask.copy()
+    cleaned_mask[alpha < ALPHA_THRESHOLD] = 0
+
+    return cleaned_mask
+
 
 class MaskEditor:
     """Interactive mask editor with brush tool."""
@@ -252,15 +279,19 @@ def correct_mask_interactive(frame_num: int, frames_dir: Path, masks_dir: Path, 
     clothed_path = frames_dir / f"clothed_frame_{frame_num:02d}.png"
     mask_path = masks_dir / f"mask_{frame_num:02d}.png"
 
-    base = np.array(Image.open(base_path).convert('RGB'))
+    base_rgba = np.array(Image.open(base_path).convert('RGBA'))
+    base_rgb = base_rgba[:, :, :3]  # Extract RGB for display
     clothed = np.array(Image.open(clothed_path).convert('RGB'))
     mask = np.array(Image.open(mask_path).convert('L')) // 255
 
     # Edit mask
-    editor = MaskEditor(base, clothed, mask)
+    editor = MaskEditor(base_rgb, clothed, mask)
     corrected_mask = editor.show()
 
     if corrected_mask is not None:
+        # Remove any clothing labels from transparent background
+        corrected_mask = remove_transparent_background(corrected_mask, base_rgba)
+
         # Save corrected mask
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"mask_{frame_num:02d}.png"

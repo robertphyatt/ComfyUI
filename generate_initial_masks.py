@@ -11,6 +11,31 @@ DIFF_THRESHOLD = 30  # RGB difference magnitude threshold for changed pixels
 BROWN_R_MIN = 80  # Minimum red channel value for brown armor
 BROWN_R_MAX = 140  # Maximum red channel value for brown armor
 COLOR_RANGE_GRAY_THRESHOLD = 30  # Max color range for gray detection (approximates std < 20)
+ALPHA_THRESHOLD = 128  # Pixels with alpha below this are considered transparent background
+
+
+def remove_transparent_background(mask: np.ndarray, base_img_rgba: np.ndarray) -> np.ndarray:
+    """Remove any clothing labels from transparent background pixels.
+
+    Args:
+        mask: Binary mask (H, W) uint8, where 1=clothing
+        base_img_rgba: Base image with alpha channel (H, W, 4) uint8
+
+    Returns:
+        Cleaned mask with transparent pixels zeroed out
+    """
+    if base_img_rgba.shape[2] != 4:
+        # No alpha channel, return mask unchanged
+        return mask
+
+    # Get alpha channel
+    alpha = base_img_rgba[:, :, 3]
+
+    # Zero out mask where background is transparent
+    cleaned_mask = mask.copy()
+    cleaned_mask[alpha < ALPHA_THRESHOLD] = 0
+
+    return cleaned_mask
 
 
 def generate_mask_from_color_diff(base_img: np.ndarray, clothed_img: np.ndarray) -> np.ndarray:
@@ -67,15 +92,19 @@ def generate_all_masks(frames_dir: Path, output_dir: Path):
             continue
 
         try:
-            # Load images
-            base = np.array(Image.open(base_path).convert('RGB'))
+            # Load images (RGBA for alpha channel detection)
+            base_rgba = np.array(Image.open(base_path).convert('RGBA'))
+            base_rgb = base_rgba[:, :, :3]  # Extract RGB for color comparison
             clothed = np.array(Image.open(clothed_path).convert('RGB'))
         except (FileNotFoundError, OSError) as e:
             print(f"Frame {frame_num:02d}: ✗ Error loading images: {e}")
             continue
 
         # Generate mask
-        mask = generate_mask_from_color_diff(base, clothed)
+        mask = generate_mask_from_color_diff(base_rgb, clothed)
+
+        # Remove any clothing labels from transparent background
+        mask = remove_transparent_background(mask, base_rgba)
 
         # Save mask
         mask_img = Image.fromarray(mask * 255)

@@ -51,6 +51,8 @@ python mask_correction_tool.py
 5. Click Save when satisfied
 6. Tool automatically loads next frame
 
+**Note:** Don't worry about painting over transparent background - it's automatically removed! The tool detects transparent pixels in the base frame (alpha < 128) and strips any clothing labels from those areas before saving. This means you can paint freely around armor edges without meticulously avoiding the background.
+
 Estimated time: 5-10 minutes per frame = 2-3 hours total
 
 ## Step 3: Verify Results
