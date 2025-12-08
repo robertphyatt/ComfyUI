@@ -32,6 +32,9 @@ python mask_correction_tool.py
 - **Left Click:** Add clothing pixels (paint red overlay)
 - **Right Click:** Remove clothing pixels (erase red)
 - **Mouse Scroll:** Adjust brush size (1-50 pixels)
+- **Ctrl+Scroll:** Zoom in/out on mask overlay (centered on mouse)
+- **+ / - Keys:** Zoom in / zoom out
+- **0 Key:** Reset zoom to 1x
 - **'R' Key:** Reset to initial automated mask
 - **'C' Key:** Clear all (start from scratch)
 - **Save Button:** Save corrected mask and move to next frame

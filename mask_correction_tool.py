@@ -28,10 +28,11 @@ class MaskEditor:
         self.brush_size = 5
         self.paint_mode = 1  # 1=add clothing, 0=remove clothing
         self.is_painting = False
+        self.zoom_level = 1.0
 
         # Setup figure
         self.fig, self.axes = plt.subplots(1, 3, figsize=(15, 5))
-        self.fig.suptitle('Mask Correction Tool - Left Click: Paint | Right Click: Erase | Scroll: Brush Size')
+        self.update_title()
 
         # Display images
         self.axes[0].imshow(self.clothed_img)
@@ -110,13 +111,18 @@ class MaskEditor:
         self.update_display()
 
     def on_scroll(self, event):
-        """Handle scroll to change brush size."""
-        if event.button == 'up':
-            self.brush_size = min(50, self.brush_size + 2)
+        """Handle scroll to change brush size or zoom (with Ctrl)."""
+        # Ctrl+Scroll = zoom on mask overlay
+        if event.key == 'control' and event.inaxes == self.axes[2]:
+            self.zoom_on_mask(event)
+        # Regular scroll = brush size
         else:
-            self.brush_size = max(1, self.brush_size - 2)
+            if event.button == 'up':
+                self.brush_size = min(50, self.brush_size + 2)
+            else:
+                self.brush_size = max(1, self.brush_size - 2)
+            self.update_title()
 
-        self.fig.suptitle(f'Brush Size: {self.brush_size} | Left Click: Paint | Right Click: Erase')
         self.fig.canvas.draw_idle()
 
     def on_key_press(self, event):
@@ -127,10 +133,85 @@ class MaskEditor:
         elif event.key == 'c':  # Clear all
             self.mask.fill(0)
             self.update_display()
+        elif event.key == '+' or event.key == '=':  # Zoom in
+            self.zoom_level = min(8.0, self.zoom_level * 1.5)
+            self.apply_zoom()
+        elif event.key == '-':  # Zoom out
+            self.zoom_level = max(1.0, self.zoom_level / 1.5)
+            self.apply_zoom()
+        elif event.key == '0':  # Reset zoom
+            self.zoom_level = 1.0
+            self.apply_zoom()
 
     def update_display(self):
         """Refresh mask overlay display."""
         self.mask_display.set_data(self.get_overlay())
+        self.fig.canvas.draw_idle()
+
+    def update_title(self):
+        """Update figure title with current tool state."""
+        zoom_str = f"Zoom: {self.zoom_level:.1f}x" if self.zoom_level > 1.0 else ""
+        title = f'Brush: {self.brush_size} | Left: Paint | Right: Erase | Scroll: Brush | Ctrl+Scroll: Zoom'
+        if zoom_str:
+            title = f'{zoom_str} | {title}'
+        self.fig.suptitle(title)
+
+    def zoom_on_mask(self, event):
+        """Zoom in/out on mask overlay centered on mouse position."""
+        if event.xdata is None or event.ydata is None:
+            return
+
+        # Get current axis limits
+        xlim = self.axes[2].get_xlim()
+        ylim = self.axes[2].get_ylim()
+
+        # Mouse position in data coordinates
+        xdata, ydata = event.xdata, event.ydata
+
+        # Zoom factor
+        if event.button == 'up':
+            scale_factor = 0.75  # Zoom in
+            self.zoom_level = min(8.0, self.zoom_level / 0.75)
+        else:
+            scale_factor = 1.25  # Zoom out
+            self.zoom_level = max(1.0, self.zoom_level * 0.75)
+
+        # Calculate new limits centered on mouse
+        new_width = (xlim[1] - xlim[0]) * scale_factor
+        new_height = (ylim[1] - ylim[0]) * scale_factor
+
+        relx = (xlim[1] - xdata) / (xlim[1] - xlim[0])
+        rely = (ylim[1] - ydata) / (ylim[1] - ylim[0])
+
+        new_xlim = [xdata - new_width * (1 - relx), xdata + new_width * relx]
+        new_ylim = [ydata - new_height * (1 - rely), ydata + new_height * rely]
+
+        # Apply limits
+        self.axes[2].set_xlim(new_xlim)
+        self.axes[2].set_ylim(new_ylim)
+        self.update_title()
+
+    def apply_zoom(self):
+        """Apply current zoom level to mask overlay."""
+        # Center on current view
+        xlim = self.axes[2].get_xlim()
+        ylim = self.axes[2].get_ylim()
+
+        center_x = (xlim[0] + xlim[1]) / 2
+        center_y = (ylim[0] + ylim[1]) / 2
+
+        # Calculate new extent based on zoom level
+        base_width = 512
+        base_height = 512
+
+        new_width = base_width / (2 * self.zoom_level)
+        new_height = base_height / (2 * self.zoom_level)
+
+        # Set new limits
+        self.axes[2].set_xlim([center_x - new_width, center_x + new_width])
+        self.axes[2].set_ylim([center_y + new_height, center_y - new_height])
+
+        self.update_title()
         self.fig.canvas.draw_idle()
 
     def add_buttons(self):
@@ -205,6 +286,9 @@ def correct_all_masks(frames_dir: Path, initial_masks_dir: Path, corrected_masks
     print("  - Left Click: Add clothing pixels (paint red)")
     print("  - Right Click: Remove clothing pixels (erase red)")
     print("  - Scroll: Adjust brush size")
+    print("  - Ctrl+Scroll: Zoom in/out (centered on mouse)")
+    print("  - +/- keys: Zoom in/out")
+    print("  - 0 key: Reset zoom to 1x")
     print("  - 'R' key: Reset to initial mask")
     print("  - 'C' key: Clear all (start from scratch)")
     print("=" * 70)
