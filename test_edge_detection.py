@@ -17,7 +17,7 @@ def test_detect_clothing_edges_basic():
     # Create clothed frame: gray with white square in center (clothing)
     clothed_arr = np.full((512, 512, 3), 128, dtype=np.uint8)  # Gray background
     clothed_arr[200:300, 200:300] = [255, 255, 255]  # White square (clothing)
-    clothed = Image.fromarray(clothed_arr, 'RGB')
+    clothed = Image.fromarray(clothed_arr)  # Auto-detects RGB from array shape
 
     edges = detect_clothing_edges(clothed, base)
 
@@ -106,3 +106,23 @@ def test_detect_clothing_edges_dilation_parameters():
         assert args[1].shape == (3, 3)
         assert np.all(args[1] == 1)
         assert kwargs.get('iterations', 1) == 1
+
+
+def test_detect_clothing_edges_sharp_boundaries():
+    """Test edge detection with sharp contrast boundaries."""
+    # Create half-and-half images to generate clear edges
+    base = Image.new('RGB', (512, 512), color='gray')
+
+    # Clothed has distinct regions that will create edges in the difference
+    clothed_arr = np.full((512, 512, 3), 128, dtype=np.uint8)  # Gray background
+    # Large white region creates a boundary with clear gradient
+    clothed_arr[100:400, 100:400] = [255, 255, 255]
+    clothed = Image.fromarray(clothed_arr)
+
+    edges = detect_clothing_edges(clothed, base)
+
+    # Should detect edges at the boundary of the white square
+    assert edges.shape == (512, 512)
+    assert edges.dtype == np.uint8
+    # Should have edge pixels around the boundary (not 90% of image, but substantial)
+    assert np.sum(edges > 0) > 1000  # At least 1000 edge pixels along boundaries
