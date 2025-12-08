@@ -184,7 +184,7 @@ def correct_mask_interactive(frame_num: int, frames_dir: Path, masks_dir: Path, 
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"mask_{frame_num:02d}.png"
 
-        mask_img = Image.fromarray(corrected_mask * 255, 'L')
+        mask_img = Image.fromarray(corrected_mask * 255)
         mask_img.save(output_path)
 
         # Statistics

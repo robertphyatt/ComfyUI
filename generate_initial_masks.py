@@ -78,7 +78,7 @@ def generate_all_masks(frames_dir: Path, output_dir: Path):
         mask = generate_mask_from_color_diff(base, clothed)
 
         # Save mask
-        mask_img = Image.fromarray(mask * 255, 'L')
+        mask_img = Image.fromarray(mask * 255)
         mask_img.save(mask_path)
 
         # Statistics
