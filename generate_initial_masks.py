@@ -6,6 +6,12 @@ import cv2
 from pathlib import Path
 from PIL import Image
 
+# Color detection thresholds
+DIFF_THRESHOLD = 30  # RGB difference magnitude threshold for changed pixels
+BROWN_R_MIN = 80  # Minimum red channel value for brown armor
+BROWN_R_MAX = 140  # Maximum red channel value for brown armor
+COLOR_RANGE_GRAY_THRESHOLD = 30  # Max color range for gray detection (approximates std < 20)
+
 
 def generate_mask_from_color_diff(base_img: np.ndarray, clothed_img: np.ndarray) -> np.ndarray:
     """Generate binary mask from color difference between base and clothed frames.
@@ -24,31 +30,25 @@ def generate_mask_from_color_diff(base_img: np.ndarray, clothed_img: np.ndarray)
     diff_magnitude = np.sum(diff, axis=2)
 
     # Threshold: pixels with significant change
-    changed_pixels = diff_magnitude > 30
+    changed_pixels = diff_magnitude > DIFF_THRESHOLD
 
-    # Analyze colors in changed regions
+    # Extract RGB channels for vectorized operations
+    r = clothed_img[:, :, 0]
+    g = clothed_img[:, :, 1]
+    b = clothed_img[:, :, 2]
+
+    # Check brown condition (vectorized)
+    # Brown: R > G > B, with R in range BROWN_R_MIN-BROWN_R_MAX
+    is_brown = (r > g) & (g > b) & (r >= BROWN_R_MIN) & (r <= BROWN_R_MAX)
+
+    # Check gray condition using max-min as proxy for std (much faster)
+    # Gray: R ≈ G ≈ B (low color variance)
+    color_range = np.maximum(np.maximum(r, g), b) - np.minimum(np.minimum(r, g), b)
+    is_gray = color_range < COLOR_RANGE_GRAY_THRESHOLD
+
+    # Combine conditions: changed pixels that are brown and not gray
     mask = np.zeros(base_img.shape[:2], dtype=np.uint8)
-
-    for y in range(base_img.shape[0]):
-        for x in range(base_img.shape[1]):
-            if not changed_pixels[y, x]:
-                continue
-
-            # Get pixel color in clothed image
-            r, g, b = clothed_img[y, x]
-
-            # Check if brown-ish (armor color range)
-            # Brown: R > G > B, with R in range 80-140
-            is_brown = (r > g and g > b and 80 <= r <= 140)
-
-            # Check if gray-ish (base character head)
-            # Gray: R ≈ G ≈ B
-            color_variance = np.std([r, g, b])
-            is_gray = color_variance < 20
-
-            # Mark as clothing if brown and not gray
-            if is_brown and not is_gray:
-                mask[y, x] = 1
+    mask[changed_pixels & is_brown & ~is_gray] = 1
 
     return mask
 
@@ -66,9 +66,13 @@ def generate_all_masks(frames_dir: Path, output_dir: Path):
             print(f"Frame {frame_num:02d}: Skipping (already exists)")
             continue
 
-        # Load images
-        base = np.array(Image.open(base_path).convert('RGB'))
-        clothed = np.array(Image.open(clothed_path).convert('RGB'))
+        try:
+            # Load images
+            base = np.array(Image.open(base_path).convert('RGB'))
+            clothed = np.array(Image.open(clothed_path).convert('RGB'))
+        except (FileNotFoundError, OSError) as e:
+            print(f"Frame {frame_num:02d}: ✗ Error loading images: {e}")
+            continue
 
         # Generate mask
         mask = generate_mask_from_color_diff(base, clothed)
