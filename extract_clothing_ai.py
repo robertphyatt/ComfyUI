@@ -170,152 +170,18 @@ Output ONLY valid JSON, no other text."""
     raise RuntimeError(f"Failed after {max_retries} attempts")
 
 
-def call_ollama_rgb_ranges(base_frame: Image.Image, clothed_frame: Image.Image,
-                           bounding_box: Dict[str, int],
-                           region_name: str,
-                           max_retries: int = 100) -> Dict[str, Any]:
-    """PHASE 2: Call Ollama vision API to get RGB ranges within a bounding box.
-
-    This is focused: only analyze a small region to get color ranges for BASE pixels.
-
-    Args:
-        base_frame: Base character frame
-        clothed_frame: Clothed character frame
-        bounding_box: Dict with x_min, y_min, x_max, y_max
-        region_name: Name of the region being analyzed
-        max_retries: Maximum retry attempts on timeout
-
-    Returns:
-        Dict with RGB ranges for BASE pixels in this region
-    """
-    print(f"   [PHASE 2] Getting RGB ranges for '{region_name}'...")
-
-    # Crop both images to the bounding box
-    x_min = bounding_box['x_min']
-    y_min = bounding_box['y_min']
-    x_max = bounding_box['x_max']
-    y_max = bounding_box['y_max']
-
-    base_crop = base_frame.crop((x_min, y_min, x_max, y_max))
-    clothed_crop = clothed_frame.crop((x_min, y_min, x_max, y_max))
-
-    print(f"   Analyzing region: ({x_min},{y_min}) to ({x_max},{y_max})")
-    print(f"   Region size: {base_crop.width}x{base_crop.height}")
-
-    # Encode cropped images
-    base_b64 = encode_image_base64(base_crop)
-    clothed_b64 = encode_image_base64(clothed_crop)
-
-    # Prompt for RGB range detection
-    prompt = f"""You are analyzing a CROPPED region from two pixel art sprite frames.
-
-This region contains a BASE character part (like a gray head) that needs to be removed.
-
-IMAGE 1 (base crop): Shows the BASE character part in this region
-IMAGE 2 (clothed crop): Shows the same BASE part, possibly with slightly different shading
-
-YOUR TASK: Identify the RGB color ranges for the BASE character pixels in IMAGE 2.
-
-Look at IMAGE 1 to understand what the BASE character colors are.
-Then look at IMAGE 2 and identify the FULL RANGE of colors used for that same BASE part.
-
-The BASE part may have shading/highlights, so provide ranges that cover:
-- Darkest shade (shadows)
-- Middle tone (main color)
-- Lightest shade (highlights)
-
-Output as JSON:
-{{
-  "base_colors": [
-    {{
-      "name": "e.g., 'gray skin tones'",
-      "rgb_range": {{
-        "r_min": 150,
-        "r_max": 220,
-        "g_min": 145,
-        "g_max": 215,
-        "b_min": 140,
-        "b_max": 210
-      }},
-      "description": "What colors this range covers"
-    }}
-  ]
-}}
-
-CRITICAL: Include the FULL RANGE of shading.
-- r_min = darkest red value in shadows
-- r_max = lightest red value in highlights
-- Same for green (g_min/g_max) and blue (b_min/b_max)
-- Values range from 0 to 255
-
-If you see gray skin ranging from RGB(150,145,140) in shadows to RGB(220,215,210) in highlights,
-your ranges should cover that FULL spectrum.
-
-Output ONLY valid JSON, no other text."""
-
-    url = "http://localhost:11434/api/generate"
-
-    payload = {
-        "model": "ministral-3:8b",
-        "prompt": prompt,
-        "images": [base_b64, clothed_b64],
-        "stream": False,
-        "format": "json"
-    }
-
-    for attempt in range(max_retries):
-        try:
-            print(f"   Calling Ollama vision API (attempt {attempt + 1}/{max_retries})...")
-            response = requests.post(url, json=payload, timeout=600)
-
-            print(f"   Response status: {response.status_code}")
-            response.raise_for_status()
-
-            result = response.json()
-            response_text = result.get("response", "")
-
-            try:
-                rgb_data = json.loads(response_text)
-                num_colors = len(rgb_data.get('base_colors', []))
-                print(f"   ✓ Got {num_colors} color range(s)")
-                return rgb_data
-            except json.JSONDecodeError as e:
-                print(f"   ✗ Failed to parse JSON response: {e}")
-                if attempt < max_retries - 1:
-                    print("   Retrying...")
-                    time.sleep(2)
-                    continue
-                raise
-
-        except requests.exceptions.Timeout:
-            print(f"   ✗ Timeout on attempt {attempt + 1}")
-            if attempt < max_retries - 1:
-                print("   Retrying...")
-                time.sleep(2)
-                continue
-            raise
-
-        except requests.exceptions.RequestException as e:
-            print(f"   ✗ Request failed: {e}")
-            if attempt < max_retries - 1:
-                print("   Retrying...")
-                time.sleep(2)
-                continue
-            raise
-
-    raise RuntimeError(f"Failed after {max_retries} attempts")
-
-
 def create_mask_from_hybrid(base_frame: Image.Image, clothed_frame: Image.Image,
                             bounding_data: Dict[str, Any],
-                            frame_num: int = 0) -> np.ndarray:
-    """PHASE 3: Create body mask using hybrid bounding box + RGB range approach.
+                            frame_num: int = 0,
+                            tolerance: int = 15) -> np.ndarray:
+    """PHASE 2 & 3: Create body mask using hybrid bounding box + direct color sampling.
 
     Args:
         base_frame: Base character frame
         clothed_frame: Clothed character frame
         bounding_data: Bounding box data from Phase 1
         frame_num: Frame number for debug output
+        tolerance: Color matching tolerance (0-255, default: 15)
 
     Returns:
         Boolean mask where True = base character (remove), False = clothing (keep)
@@ -371,8 +237,8 @@ def create_mask_from_hybrid(base_frame: Image.Image, clothed_frame: Image.Image,
         print(f"      Found {len(base_colors_set)} unique colors in base frame")
 
         # Now remove any pixels in clothed frame that match these base colors
-        # with a small tolerance for compression artifacts
-        TOLERANCE = 15  # Allow slight color variation due to compression/lighting
+        # with tolerance for compression artifacts and lighting variations
+        print(f"      Using tolerance: {tolerance}")
 
         pixels_removed = 0
         for y in range(max(0, y_min), min(height, y_max + 1)):
@@ -387,9 +253,9 @@ def create_mask_from_hybrid(base_frame: Image.Image, clothed_frame: Image.Image,
 
                 # Check if this pixel matches any base color (with tolerance)
                 for b_r, b_g, b_b in base_colors_set:
-                    if (abs(c_r - b_r) <= TOLERANCE and
-                        abs(c_g - b_g) <= TOLERANCE and
-                        abs(c_b - b_b) <= TOLERANCE):
+                    if (abs(c_r - b_r) <= tolerance and
+                        abs(c_g - b_g) <= tolerance and
+                        abs(c_b - b_b) <= tolerance):
                         body_mask[y, x] = True
                         pixels_removed += 1
                         break  # Found a match, move to next pixel
@@ -430,19 +296,21 @@ def create_mask_from_hybrid(base_frame: Image.Image, clothed_frame: Image.Image,
 
 
 def extract_clothing_with_ai(base_frame: Image.Image, clothed_frame: Image.Image,
-                            user_guidance: str = None, frame_num: int = 0) -> Image.Image:
+                            user_guidance: str = None, frame_num: int = 0,
+                            tolerance: int = 15) -> Image.Image:
     """Extract clothing using hybrid AI + algorithmic approach.
 
     Three-phase approach:
-    1. AI identifies bounding boxes around BASE regions
-    2. AI provides RGB ranges within each bounding box
-    3. Algorithmic removal of pixels matching RGB ranges within boxes
+    1. AI identifies bounding boxes around BASE regions (semantic understanding)
+    2. Direct color sampling from base frame within bounding boxes (algorithmic precision)
+    3. Tolerance-based color matching for pixel removal (handles compression artifacts)
 
     Args:
         base_frame: Base character frame
         clothed_frame: Clothed character frame
         user_guidance: User-provided guidance on what base parts to remove
         frame_num: Frame number for debug output
+        tolerance: Color matching tolerance (0-255, default: 15)
 
     Returns:
         Clothing-only frame with transparent background
@@ -456,8 +324,8 @@ def extract_clothing_with_ai(base_frame: Image.Image, clothed_frame: Image.Image
     # PHASE 1: Get bounding boxes from AI
     bounding_data = call_ollama_bounding_box(base_frame, clothed_frame, user_guidance)
 
-    # PHASE 2 & 3: Get RGB ranges and create mask (combined in create_mask_from_hybrid)
-    body_mask = create_mask_from_hybrid(base_frame, clothed_frame, bounding_data, frame_num)
+    # PHASE 2 & 3: Sample colors and create mask (combined in create_mask_from_hybrid)
+    body_mask = create_mask_from_hybrid(base_frame, clothed_frame, bounding_data, frame_num, tolerance)
 
     # Apply mask to extract clothing
     clothed_arr = np.array(clothed_frame)
