@@ -15,6 +15,7 @@ from typing import Tuple, List, Dict, Any
 import numpy as np
 from PIL import Image
 import requests
+from extract_clothing_segmentation import extract_clothing_semantic
 
 
 def encode_image_base64(image: Image.Image) -> str:
@@ -575,6 +576,14 @@ Example:
         help='Color matching tolerance for compression artifacts (default: 10)'
     )
 
+    parser.add_argument(
+        '--method',
+        type=str,
+        choices=['bbox', 'semantic'],
+        default='bbox',
+        help='Extraction method: bbox (bounding box with guidance) or semantic (pixel-level segmentation with edge refinement). Default: bbox'
+    )
+
     args = parser.parse_args()
 
     # Validate inputs
@@ -589,6 +598,7 @@ Example:
     print("🤖 Extracting clothing layers using AI vision...")
     print(f"   Base: {args.base}")
     print(f"   Clothed: {args.clothed}")
+    print(f"   Method: {args.method}")
     if args.guidance:
         print(f"   Guidance: {args.guidance}")
     if args.ai_guidance:
@@ -619,82 +629,107 @@ Example:
         debug_dir = Path("debug_frames_ai")
         debug_dir.mkdir(exist_ok=True)
 
-    # PASS 1: Initial processing
-    print("\n   === PASS 1: Initial processing ===")
-    for i, (base_frame, clothed_frame) in enumerate(zip(base_frames, clothed_frames)):
-        print(f"\n   Frame {i+1}/{len(base_frames)}:")
+    if args.method == 'bbox':
+        # EXISTING BBOX LOGIC (two-pass adaptive retry)
+        # PASS 1: Initial processing
+        print("\n   === PASS 1: Initial processing ===")
+        for i, (base_frame, clothed_frame) in enumerate(zip(base_frames, clothed_frames)):
+            print(f"\n   Frame {i+1}/{len(base_frames)}:")
 
-        # Align clothed frame to base
-        aligned_clothed = align_frames(base_frame, clothed_frame)
-
-        # Extract clothing using AI (no retry on first pass)
-        clothing_frame, pixels_removed = extract_clothing_with_ai(
-            base_frame, aligned_clothed, args.guidance, args.ai_guidance, i,
-            tolerance=args.tolerance, max_retries=1, return_pixel_count=True
-        )
-        clothing_frames[i] = clothing_frame
-        pixel_counts[i] = pixels_removed
-
-        # Save debug frames if requested
-        if args.debug:
-            base_frame.save(debug_dir / f"frame_{i:02d}_base.png")
-            clothed_frame.save(debug_dir / f"frame_{i:02d}_clothed.png")
-            aligned_clothed.save(debug_dir / f"frame_{i:02d}_aligned.png")
-            clothing_frame.save(debug_dir / f"frame_{i:02d}_clothing.png")
-
-    # PASS 2: Adaptive retry until all frames within 10% of max
-    print(f"\n   === PASS 2: Adaptive retry ===")
-    max_retries_per_frame = 5
-    retry_round = 1
-
-    while True:
-        max_pixels = max(pixel_counts)
-        min_threshold = max_pixels * 0.10  # 10% of max
-
-        retry_indices = [i for i, count in enumerate(pixel_counts) if count < min_threshold]
-
-        if not retry_indices:
-            print(f"   ✅ All frames within 10% of max ({max_pixels} pixels)")
-            break
-
-        print(f"\n   Round {retry_round}: {len(retry_indices)} frames below threshold ({min_threshold:.0f} pixels)")
-        print(f"   Frames to retry: {[i+1 for i in retry_indices]}")
-
-        improved = False
-        for i in retry_indices:
-            print(f"\n   Retrying frame {i+1} (currently {pixel_counts[i]} pixels):")
-
-            base_frame = base_frames[i]
-            clothed_frame = clothed_frames[i]
+            # Align clothed frame to base
             aligned_clothed = align_frames(base_frame, clothed_frame)
 
-            # Retry with fresh AI call
+            # Extract clothing using AI (no retry on first pass)
             clothing_frame, pixels_removed = extract_clothing_with_ai(
                 base_frame, aligned_clothed, args.guidance, args.ai_guidance, i,
                 tolerance=args.tolerance, max_retries=1, return_pixel_count=True
             )
+            clothing_frames[i] = clothing_frame
+            pixel_counts[i] = pixels_removed
 
-            if pixels_removed > pixel_counts[i]:
-                print(f"   ✅ Improved: {pixel_counts[i]} → {pixels_removed} pixels")
-                clothing_frames[i] = clothing_frame
-                pixel_counts[i] = pixels_removed
-                improved = True
+            # Save debug frames if requested
+            if args.debug:
+                base_frame.save(debug_dir / f"frame_{i:02d}_base.png")
+                clothed_frame.save(debug_dir / f"frame_{i:02d}_clothed.png")
+                aligned_clothed.save(debug_dir / f"frame_{i:02d}_aligned.png")
+                clothing_frame.save(debug_dir / f"frame_{i:02d}_clothing.png")
 
-                # Update debug frame
-                if args.debug:
-                    clothing_frame.save(debug_dir / f"frame_{i:02d}_clothing.png")
-            else:
-                print(f"   ℹ️  No improvement ({pixels_removed} pixels)")
+        # PASS 2: Adaptive retry until all frames within 10% of max
+        print(f"\n   === PASS 2: Adaptive retry ===")
+        max_retries_per_frame = 5
+        retry_round = 1
 
-        if not improved:
-            print(f"\n   ⚠️  No improvements in round {retry_round}, stopping retries")
-            print(f"   Final pixel counts range: {min(pixel_counts)} - {max(pixel_counts)}")
-            break
+        while True:
+            max_pixels = max(pixel_counts)
+            min_threshold = max_pixels * 0.10  # 10% of max
 
-        retry_round += 1
-        if retry_round > max_retries_per_frame:
-            print(f"\n   ⚠️  Max retry rounds reached ({max_retries_per_frame}), stopping")
-            break
+            retry_indices = [i for i, count in enumerate(pixel_counts) if count < min_threshold]
+
+            if not retry_indices:
+                print(f"   ✅ All frames within 10% of max ({max_pixels} pixels)")
+                break
+
+            print(f"\n   Round {retry_round}: {len(retry_indices)} frames below threshold ({min_threshold:.0f} pixels)")
+            print(f"   Frames to retry: {[i+1 for i in retry_indices]}")
+
+            improved = False
+            for i in retry_indices:
+                print(f"\n   Retrying frame {i+1} (currently {pixel_counts[i]} pixels):")
+
+                base_frame = base_frames[i]
+                clothed_frame = clothed_frames[i]
+                aligned_clothed = align_frames(base_frame, clothed_frame)
+
+                # Retry with fresh AI call
+                clothing_frame, pixels_removed = extract_clothing_with_ai(
+                    base_frame, aligned_clothed, args.guidance, args.ai_guidance, i,
+                    tolerance=args.tolerance, max_retries=1, return_pixel_count=True
+                )
+
+                if pixels_removed > pixel_counts[i]:
+                    print(f"   ✅ Improved: {pixel_counts[i]} → {pixels_removed} pixels")
+                    clothing_frames[i] = clothing_frame
+                    pixel_counts[i] = pixels_removed
+                    improved = True
+
+                    # Update debug frame
+                    if args.debug:
+                        clothing_frame.save(debug_dir / f"frame_{i:02d}_clothing.png")
+                else:
+                    print(f"   ℹ️  No improvement ({pixels_removed} pixels)")
+
+            if not improved:
+                print(f"\n   ⚠️  No improvements in round {retry_round}, stopping retries")
+                print(f"   Final pixel counts range: {min(pixel_counts)} - {max(pixel_counts)}")
+                break
+
+            retry_round += 1
+            if retry_round > max_retries_per_frame:
+                print(f"\n   ⚠️  Max retry rounds reached ({max_retries_per_frame}), stopping")
+                break
+
+    elif args.method == 'semantic':
+        # NEW SEMANTIC SEGMENTATION APPROACH (no adaptive retry needed)
+        print("\n   === Semantic Segmentation Processing ===")
+        for i, (base_frame, clothed_frame) in enumerate(zip(base_frames, clothed_frames)):
+            print(f"\n   Frame {i+1}/{len(base_frames)}:")
+
+            # No alignment needed - semantic segmentation handles variations
+            # Extract clothing using semantic segmentation
+            start_time = time.time()
+            clothing_frame = extract_clothing_semantic(clothed_frame, base_frame)
+            elapsed = time.time() - start_time
+
+            clothing_frames[i] = clothing_frame
+            print(f"   ✓ Completed in {elapsed:.2f}s")
+
+            # Save debug frames if requested
+            if args.debug:
+                debug_dir_semantic = Path("debug_frames_semantic")
+                debug_dir_semantic.mkdir(exist_ok=True)
+                base_frame.save(debug_dir_semantic / f"frame_{i:02d}_base.png")
+                clothed_frame.save(debug_dir_semantic / f"frame_{i:02d}_clothed.png")
+                clothing_frame.save(debug_dir_semantic / f"frame_{i:02d}_clothing.png")
 
     # Step 3: Reassemble
     print("\n🔧 Step 3: Reassembling spritesheet...")
