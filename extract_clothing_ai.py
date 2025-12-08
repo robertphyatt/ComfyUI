@@ -334,7 +334,8 @@ def create_mask_from_hybrid(base_frame: Image.Image, clothed_frame: Image.Image,
 
 def extract_clothing_with_ai(base_frame: Image.Image, clothed_frame: Image.Image,
                             user_guidance: str = None, frame_num: int = 0,
-                            tolerance: int = 15, max_retries: int = 3) -> Image.Image:
+                            tolerance: int = 15, max_retries: int = 3,
+                            return_pixel_count: bool = False):
     """Extract clothing using hybrid AI + algorithmic approach.
 
     Three-phase approach:
@@ -396,7 +397,12 @@ def extract_clothing_with_ai(base_frame: Image.Image, clothed_frame: Image.Image
     clothing_arr = clothed_arr.copy()
     clothing_arr[body_mask] = [0, 0, 0, 0]
 
-    return Image.fromarray(clothing_arr, 'RGBA')
+    result = Image.fromarray(clothing_arr, 'RGBA')
+
+    if return_pixel_count:
+        return result, body_pixels
+    else:
+        return result
 
 
 def split_spritesheet(spritesheet_path: Path, grid_size: Tuple[int, int] = (5, 5)) -> List[Image.Image]:
@@ -575,23 +581,30 @@ Example:
     clothed_frames = split_spritesheet(args.clothed)
     print(f"   Split into {len(base_frames)} frames each")
 
-    # Step 2: Process each frame with AI
+    # Step 2: Process each frame with AI (two-pass adaptive retry)
     print("\n🔧 Step 2: Processing frames with AI vision...")
-    clothing_frames = []
+    clothing_frames = [None] * len(base_frames)
+    pixel_counts = [0] * len(base_frames)
 
     if args.debug:
         debug_dir = Path("debug_frames_ai")
         debug_dir.mkdir(exist_ok=True)
 
+    # PASS 1: Initial processing
+    print("\n   === PASS 1: Initial processing ===")
     for i, (base_frame, clothed_frame) in enumerate(zip(base_frames, clothed_frames)):
         print(f"\n   Frame {i+1}/{len(base_frames)}:")
 
         # Align clothed frame to base
         aligned_clothed = align_frames(base_frame, clothed_frame)
 
-        # Extract clothing using AI
-        clothing_frame = extract_clothing_with_ai(base_frame, aligned_clothed, args.guidance, i)
-        clothing_frames.append(clothing_frame)
+        # Extract clothing using AI (no retry on first pass)
+        clothing_frame, pixels_removed = extract_clothing_with_ai(
+            base_frame, aligned_clothed, args.guidance, i,
+            tolerance=args.tolerance, max_retries=1, return_pixel_count=True
+        )
+        clothing_frames[i] = clothing_frame
+        pixel_counts[i] = pixels_removed
 
         # Save debug frames if requested
         if args.debug:
@@ -599,6 +612,60 @@ Example:
             clothed_frame.save(debug_dir / f"frame_{i:02d}_clothed.png")
             aligned_clothed.save(debug_dir / f"frame_{i:02d}_aligned.png")
             clothing_frame.save(debug_dir / f"frame_{i:02d}_clothing.png")
+
+    # PASS 2: Adaptive retry until all frames within 10% of max
+    print(f"\n   === PASS 2: Adaptive retry ===")
+    max_retries_per_frame = 5
+    retry_round = 1
+
+    while True:
+        max_pixels = max(pixel_counts)
+        min_threshold = max_pixels * 0.10  # 10% of max
+
+        retry_indices = [i for i, count in enumerate(pixel_counts) if count < min_threshold]
+
+        if not retry_indices:
+            print(f"   ✅ All frames within 10% of max ({max_pixels} pixels)")
+            break
+
+        print(f"\n   Round {retry_round}: {len(retry_indices)} frames below threshold ({min_threshold:.0f} pixels)")
+        print(f"   Frames to retry: {[i+1 for i in retry_indices]}")
+
+        improved = False
+        for i in retry_indices:
+            print(f"\n   Retrying frame {i+1} (currently {pixel_counts[i]} pixels):")
+
+            base_frame = base_frames[i]
+            clothed_frame = clothed_frames[i]
+            aligned_clothed = align_frames(base_frame, clothed_frame)
+
+            # Retry with fresh AI call
+            clothing_frame, pixels_removed = extract_clothing_with_ai(
+                base_frame, aligned_clothed, args.guidance, i,
+                tolerance=args.tolerance, max_retries=1, return_pixel_count=True
+            )
+
+            if pixels_removed > pixel_counts[i]:
+                print(f"   ✅ Improved: {pixel_counts[i]} → {pixels_removed} pixels")
+                clothing_frames[i] = clothing_frame
+                pixel_counts[i] = pixels_removed
+                improved = True
+
+                # Update debug frame
+                if args.debug:
+                    clothing_frame.save(debug_dir / f"frame_{i:02d}_clothing.png")
+            else:
+                print(f"   ℹ️  No improvement ({pixels_removed} pixels)")
+
+        if not improved:
+            print(f"\n   ⚠️  No improvements in round {retry_round}, stopping retries")
+            print(f"   Final pixel counts range: {min(pixel_counts)} - {max(pixel_counts)}")
+            break
+
+        retry_round += 1
+        if retry_round > max_retries_per_frame:
+            print(f"\n   ⚠️  Max retry rounds reached ({max_retries_per_frame}), stopping")
+            break
 
     # Step 3: Reassemble
     print("\n🔧 Step 3: Reassembling spritesheet...")
