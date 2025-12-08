@@ -214,12 +214,45 @@ def create_mask_from_hybrid(base_frame: Image.Image, clothed_frame: Image.Image,
         print(f"      Reasoning: {reasoning}")
 
         # PHASE 2: Sample actual colors from base frame instead of asking AI
-        x_min = bbox['x_min']
-        y_min = bbox['y_min']
-        x_max = bbox['x_max']
-        y_max = bbox['y_max']
+        # Validate and clamp bounding box
+        x_min = max(0, min(int(bbox.get('x_min', 0)), width - 1))
+        y_min = max(0, min(int(bbox.get('y_min', 0)), height - 1))
+        x_max = max(0, min(int(bbox.get('x_max', width-1)), width - 1))
+        y_max = max(0, min(int(bbox.get('y_max', height-1)), height - 1))
 
-        print(f"      Bounding box: ({x_min},{y_min}) to ({x_max},{y_max})")
+        print(f"      Bounding box (raw): ({bbox.get('x_min')},{bbox.get('y_min')}) to ({bbox.get('x_max')},{bbox.get('y_max')})")
+
+        # Validate box is well-formed
+        if x_min >= x_max or y_min >= y_max:
+            print(f"      ⚠️  WARNING: Invalid bounding box - skipping region")
+            continue
+
+        box_width = x_max - x_min
+        box_height = y_max - y_min
+
+        if box_width < 5 or box_height < 5:
+            print(f"      ⚠️  WARNING: Bounding box too small ({box_width}x{box_height}) - skipping region")
+            continue
+
+        # CRITICAL: Reject boxes that are too large (likely including body, not just head)
+        # Head should be roughly 150x150 pixels max for 512x512 frame
+        MAX_HEAD_SIZE = 200
+        if box_width > MAX_HEAD_SIZE or box_height > MAX_HEAD_SIZE:
+            print(f"      ⚠️  WARNING: Bounding box too large ({box_width}x{box_height}) - likely includes body!")
+            print(f"      Clamping to maximum {MAX_HEAD_SIZE}x{MAX_HEAD_SIZE}")
+            # Clamp from center
+            center_x = (x_min + x_max) // 2
+            center_y = (y_min + y_max) // 2
+            half_size = MAX_HEAD_SIZE // 2
+            x_min = max(0, center_x - half_size)
+            x_max = min(width - 1, center_x + half_size)
+            y_min = max(0, center_y - half_size)
+            y_max = min(height - 1, center_y + half_size)
+            # Recompute after clamping
+            box_width = x_max - x_min
+            box_height = y_max - y_min
+
+        print(f"      Bounding box (validated): ({x_min},{y_min}) to ({x_max},{y_max}) [{box_width}x{box_height}]")
         print(f"      [PHASE 2] Sampling colors from base frame in this region...")
 
         # Sample all unique colors from base frame in this bounding box
@@ -234,7 +267,16 @@ def create_mask_from_hybrid(base_frame: Image.Image, clothed_frame: Image.Image,
                     continue
                 base_colors_set.add((int(pixel[0]), int(pixel[1]), int(pixel[2])))
 
-        print(f"      Found {len(base_colors_set)} unique colors in base frame")
+        num_colors = len(base_colors_set)
+        print(f"      Found {num_colors} unique colors in base frame")
+
+        # Sanity check: Head should have 200-800 unique colors
+        # If we have 1000+, the bounding box likely includes body
+        if num_colors > 1000:
+            print(f"      ⚠️  WARNING: Too many colors ({num_colors}) - bounding box likely includes body!")
+            print(f"      Expected 200-800 colors for head only")
+            print(f"      This will cause armor to be removed. Skipping this region.")
+            continue
 
         # Now remove any pixels in clothed frame that match these base colors
         # with tolerance for compression artifacts and lighting variations
