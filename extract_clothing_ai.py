@@ -187,7 +187,7 @@ Output ONLY valid JSON, no other text."""
 def create_mask_from_hybrid(base_frame: Image.Image, clothed_frame: Image.Image,
                             bounding_data: Dict[str, Any],
                             frame_num: int = 0,
-                            tolerance: int = 15) -> np.ndarray:
+                            tolerance: int = 10) -> np.ndarray:
     """PHASE 2 & 3: Create body mask using hybrid bounding box + direct color sampling.
 
     Args:
@@ -195,7 +195,7 @@ def create_mask_from_hybrid(base_frame: Image.Image, clothed_frame: Image.Image,
         clothed_frame: Clothed character frame
         bounding_data: Bounding box data from Phase 1
         frame_num: Frame number for debug output
-        tolerance: Color matching tolerance (0-255, default: 15)
+        tolerance: Color matching tolerance (0-255, default: 10)
 
     Returns:
         Boolean mask where True = base character (remove), False = clothing (keep)
