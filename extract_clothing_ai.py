@@ -124,7 +124,10 @@ Output ONLY valid JSON, no other text."""
         "prompt": prompt,
         "images": [base_b64, clothed_b64],
         "stream": False,
-        "format": "json"
+        "format": "json",
+        "options": {
+            "temperature": 0.0  # Deterministic responses for consistency
+        }
     }
 
     for attempt in range(max_retries):
@@ -270,14 +273,6 @@ def create_mask_from_hybrid(base_frame: Image.Image, clothed_frame: Image.Image,
         num_colors = len(base_colors_set)
         print(f"      Found {num_colors} unique colors in base frame")
 
-        # Sanity check: Head should have 200-800 unique colors
-        # If we have 1000+, the bounding box likely includes body
-        if num_colors > 1000:
-            print(f"      ⚠️  WARNING: Too many colors ({num_colors}) - bounding box likely includes body!")
-            print(f"      Expected 200-800 colors for head only")
-            print(f"      This will cause armor to be removed. Skipping this region.")
-            continue
-
         # Now remove any pixels in clothed frame that match these base colors
         # with tolerance for compression artifacts and lighting variations
         print(f"      Using tolerance: {tolerance}")
@@ -339,7 +334,7 @@ def create_mask_from_hybrid(base_frame: Image.Image, clothed_frame: Image.Image,
 
 def extract_clothing_with_ai(base_frame: Image.Image, clothed_frame: Image.Image,
                             user_guidance: str = None, frame_num: int = 0,
-                            tolerance: int = 15) -> Image.Image:
+                            tolerance: int = 15, max_retries: int = 3) -> Image.Image:
     """Extract clothing using hybrid AI + algorithmic approach.
 
     Three-phase approach:
@@ -353,6 +348,7 @@ def extract_clothing_with_ai(base_frame: Image.Image, clothed_frame: Image.Image
         user_guidance: User-provided guidance on what base parts to remove
         frame_num: Frame number for debug output
         tolerance: Color matching tolerance (0-255, default: 15)
+        max_retries: Maximum retry attempts if result is suspicious (default: 3)
 
     Returns:
         Clothing-only frame with transparent background
@@ -363,26 +359,42 @@ def extract_clothing_with_ai(base_frame: Image.Image, clothed_frame: Image.Image
     if clothed_frame.mode != 'RGBA':
         clothed_frame = clothed_frame.convert('RGBA')
 
-    # PHASE 1: Get bounding boxes from AI
-    bounding_data = call_ollama_bounding_box(base_frame, clothed_frame, user_guidance)
+    # Retry loop for inconsistent AI bounding boxes
+    MIN_PIXELS_REMOVED = 1500  # Head should be at least 1500 pixels
 
-    # PHASE 2 & 3: Sample colors and create mask (combined in create_mask_from_hybrid)
-    body_mask = create_mask_from_hybrid(base_frame, clothed_frame, bounding_data, frame_num, tolerance)
+    for attempt in range(max_retries):
+        if attempt > 0:
+            print(f"\n   🔄 Retry attempt {attempt + 1}/{max_retries} (previous result was suspicious)")
+
+        # PHASE 1: Get bounding boxes from AI
+        bounding_data = call_ollama_bounding_box(base_frame, clothed_frame, user_guidance)
+
+        # PHASE 2 & 3: Sample colors and create mask (combined in create_mask_from_hybrid)
+        body_mask = create_mask_from_hybrid(base_frame, clothed_frame, bounding_data, frame_num, tolerance)
+
+        # Count results
+        clothed_arr = np.array(clothed_frame)
+        body_pixels = np.sum(body_mask)
+        total_clothed = np.sum(clothed_arr[:, :, 3] > 0)
+        clothing_pixels = total_clothed - body_pixels
+
+        print(f"   ✓ Attempt {attempt + 1}: kept {clothing_pixels} clothing pixels, removed {body_pixels} body pixels")
+
+        # Check if result is reasonable
+        if body_pixels >= MIN_PIXELS_REMOVED:
+            print(f"   ✅ Result looks good (>= {MIN_PIXELS_REMOVED} pixels removed)")
+            break
+        else:
+            print(f"   ⚠️  Suspicious result: only {body_pixels} pixels removed (expected >= {MIN_PIXELS_REMOVED})")
+            if attempt < max_retries - 1:
+                print(f"   🔄 Retrying with fresh AI call...")
+                continue
+            else:
+                print(f"   ⚠️  Max retries reached, proceeding with best attempt")
 
     # Apply mask to extract clothing
-    clothed_arr = np.array(clothed_frame)
     clothing_arr = clothed_arr.copy()
-
-    height, width = clothed_arr.shape[:2]
-
-    # Remove body pixels (set to transparent)
     clothing_arr[body_mask] = [0, 0, 0, 0]
-
-    # Count results
-    body_pixels = np.sum(body_mask)
-    total_clothed = np.sum(clothed_arr[:, :, 3] > 0)
-    clothing_pixels = total_clothed - body_pixels
-    print(f"   ✓ Final: kept {clothing_pixels} clothing pixels, removed {body_pixels} body pixels")
 
     return Image.fromarray(clothing_arr, 'RGBA')
 
