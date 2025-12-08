@@ -14,12 +14,12 @@ def test_extract_clothing_semantic_basic():
     base = Image.new('RGB', (512, 512), color='gray')
 
     # Mock AI segmentation to return a simple mask
-    mock_mask_256 = np.ones((256, 256), dtype=np.uint8)
+    mock_mask_128 = np.ones((128, 128), dtype=np.uint8)
 
     # Mock edge detection to return edges
     mock_edges_512 = np.zeros((512, 512), dtype=np.uint8)
 
-    with patch('extract_clothing_segmentation.call_ollama_segmentation', return_value=mock_mask_256):
+    with patch('extract_clothing_segmentation.call_ollama_segmentation', return_value=mock_mask_128):
         with patch('extract_clothing_segmentation.detect_clothing_edges', return_value=mock_edges_512):
             result = extract_clothing_semantic(clothed, base)
 
@@ -35,12 +35,12 @@ def test_extract_clothing_semantic_pipeline_integration():
     base = Image.new('RGB', (512, 512), color='gray')
 
     # Create mock objects to track call order
-    mock_mask_256 = np.ones((256, 256), dtype=np.uint8)
+    mock_mask_128 = np.ones((128, 128), dtype=np.uint8)
     mock_edges_512 = np.zeros((512, 512), dtype=np.uint8)
     mock_mask_512_snapped = np.ones((512, 512), dtype=np.uint8)
     mock_mask_512_cleaned = np.ones((512, 512), dtype=np.uint8)
 
-    with patch('extract_clothing_segmentation.call_ollama_segmentation', return_value=mock_mask_256) as mock_ai:
+    with patch('extract_clothing_segmentation.call_ollama_segmentation', return_value=mock_mask_128) as mock_ai:
         with patch('extract_clothing_segmentation.detect_clothing_edges', return_value=mock_edges_512) as mock_edges:
             with patch('extract_clothing_segmentation.snap_mask_to_edges', return_value=mock_mask_512_snapped) as mock_snap:
                 with patch('extract_clothing_segmentation.cleanup_mask', return_value=mock_mask_512_cleaned) as mock_cleanup:
@@ -49,7 +49,7 @@ def test_extract_clothing_semantic_pipeline_integration():
     # Verify all functions were called
     mock_ai.assert_called_once()
     mock_edges.assert_called_once_with(clothed, base)
-    mock_snap.assert_called_once_with(mock_mask_256, mock_edges_512, search_radius=10)
+    mock_snap.assert_called_once_with(mock_mask_128, mock_edges_512, search_radius=10)
     mock_cleanup.assert_called_once_with(mock_mask_512_snapped, close_iterations=2, open_iterations=1)
 
     # Verify result
@@ -58,20 +58,20 @@ def test_extract_clothing_semantic_pipeline_integration():
 
 
 def test_extract_clothing_semantic_downscaling():
-    """Test that clothed frame is downscaled to 256×256 for AI."""
+    """Test that clothed frame is downscaled to 128×128 for AI."""
     clothed = Image.new('RGB', (512, 512), color='brown')
     base = Image.new('RGB', (512, 512), color='gray')
 
-    mock_mask_256 = np.ones((256, 256), dtype=np.uint8)
+    mock_mask_128 = np.ones((128, 128), dtype=np.uint8)
 
-    with patch('extract_clothing_segmentation.call_ollama_segmentation', return_value=mock_mask_256) as mock_ai:
+    with patch('extract_clothing_segmentation.call_ollama_segmentation', return_value=mock_mask_128) as mock_ai:
         with patch('extract_clothing_segmentation.detect_clothing_edges', return_value=np.zeros((512, 512), dtype=np.uint8)):
             extract_clothing_semantic(clothed, base)
 
-    # Verify AI was called with 256×256 image
+    # Verify AI was called with 128×128 image
     call_args = mock_ai.call_args[0]
     downscaled_image = call_args[0]
-    assert downscaled_image.size == (256, 256)
+    assert downscaled_image.size == (128, 128)
 
 
 def test_extract_clothing_semantic_transparency():
@@ -83,7 +83,7 @@ def test_extract_clothing_semantic_transparency():
     mock_mask_cleaned = np.zeros((512, 512), dtype=np.uint8)
     mock_mask_cleaned[0:256, :] = 1  # Top half is clothing
 
-    with patch('extract_clothing_segmentation.call_ollama_segmentation', return_value=np.ones((256, 256), dtype=np.uint8)):
+    with patch('extract_clothing_segmentation.call_ollama_segmentation', return_value=np.ones((128, 128), dtype=np.uint8)):
         with patch('extract_clothing_segmentation.detect_clothing_edges', return_value=np.zeros((512, 512), dtype=np.uint8)):
             with patch('extract_clothing_segmentation.cleanup_mask', return_value=mock_mask_cleaned):
                 result = extract_clothing_semantic(clothed, base)

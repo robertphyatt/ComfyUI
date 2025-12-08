@@ -8,23 +8,22 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 
-def snap_mask_to_edges(mask_256: np.ndarray, edges_512: np.ndarray, search_radius: int = 10) -> np.ndarray:
+def snap_mask_to_edges(mask_128: np.ndarray, edges_512: np.ndarray, search_radius: int = 10) -> np.ndarray:
     """Snap rough mask boundaries to precise detected edges.
 
-    Upscales the rough 256×256 AI mask to 512×512 using nearest-neighbor,
+    Upscales the rough 128×128 AI mask to 512×512 using nearest-neighbor,
     then refines boundaries by snapping to nearby detected edges.
 
     Algorithm:
     1. Upscale mask to 512×512 (nearest-neighbor preserves binary values)
     2. Find all edge pixels (255 in edge map)
     3. Build spatial index (KD-tree) for fast nearest-neighbor lookup
-    4. Find mask boundary pixels and classify as inner/outer
-    5. For inner boundaries (clothing edge), expand outward to nearby edges
-    6. For outer boundaries (base edge), contract inward to nearby edges
-    7. Draw lines to fill/erase pixels between boundary and edge
+    4. Find mask boundary pixels (pixels where mask transitions 0→1 or 1→0)
+    5. For each boundary pixel, find nearest edge within search_radius
+    6. Snap boundary pixel to that edge location
 
     Args:
-        mask_256: 256×256 binary mask (0=base, 1=clothing) as uint8 numpy array
+        mask_128: 128×128 binary mask (0=base, 1=clothing) as uint8 numpy array
         edges_512: 512×512 binary edge map (255=edge, 0=no edge) as uint8 numpy array
         search_radius: Maximum distance to search for nearest edge (default: 10 pixels)
 
@@ -32,19 +31,19 @@ def snap_mask_to_edges(mask_256: np.ndarray, edges_512: np.ndarray, search_radiu
         512×512 refined binary mask (0=base, 1=clothing) as uint8 numpy array
 
     Raises:
-        ValueError: If mask_256 is not 256×256 or edges_512 is not 512×512
+        ValueError: If mask_128 is not 128×128 or edges_512 is not 512×512
         ValueError: If search_radius is not positive
     """
     # Validate inputs
-    if mask_256.shape != (256, 256):
-        raise ValueError(f"mask_256 must be 256x256, got {mask_256.shape}")
+    if mask_128.shape != (128, 128):
+        raise ValueError(f"mask_128 must be 128x128, got {mask_128.shape}")
     if edges_512.shape != (512, 512):
         raise ValueError(f"edges_512 must be 512x512, got {edges_512.shape}")
     if search_radius <= 0:
         raise ValueError(f"search_radius must be positive, got {search_radius}")
 
     # Step 1: Upscale mask to 512×512 using nearest-neighbor
-    mask_512 = cv2.resize(mask_256, (512, 512), interpolation=cv2.INTER_NEAREST)
+    mask_512 = cv2.resize(mask_128, (512, 512), interpolation=cv2.INTER_NEAREST)
 
     # Step 2: Find all edge pixels
     edge_coords = np.argwhere(edges_512 == 255)

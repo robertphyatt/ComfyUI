@@ -13,41 +13,40 @@ def encode_image_base64(image: Image.Image) -> str:
     """Encode PIL image as base64 string.
 
     Args:
-        image: PIL Image (must be 256x256)
+        image: PIL Image (must be 128x128)
 
     Raises:
-        ValueError: If image is not 256x256
+        ValueError: If image is not 128x128
     """
-    if image.size != (256, 256):
-        raise ValueError(f"Image must be 256x256, got {image.size}")
+    if image.size != (128, 128):
+        raise ValueError(f"Image must be 128x128, got {image.size}")
 
     buffered = io.BytesIO()
     image.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-def call_ollama_segmentation(clothed_frame_256: Image.Image) -> np.ndarray:
+def call_ollama_segmentation(clothed_frame_128: Image.Image) -> np.ndarray:
     """Call Ollama to generate semantic segmentation mask.
 
     Args:
-        clothed_frame_256: 256x256 clothed character frame
+        clothed_frame_128: PIL Image (128×128) of character wearing clothing
 
     Returns:
-        256x256 binary mask (0=base character, 1=clothing)
+        128×128 binary mask (0=base character, 1=clothing) as uint8 numpy array
     """
     # Encode image
-    image_b64 = encode_image_base64(clothed_frame_256)
+    image_b64 = encode_image_base64(clothed_frame_128)
 
     # Build prompt
-    prompt = """Analyze this 256×256 pixel sprite showing a character wearing clothing/armor.
+    prompt = """Analyze this 128×128 pixel sprite showing a character wearing clothing/armor.
 
 Classify each pixel as either:
 - CLOTHING (1): New armor/clothing pixels (brown leather armor, equipment, etc.)
 - BASE (0): Original gray character pixels showing through (gray skin/head visible through helmet)
-- TRANSPARENT pixels (alpha < 50): Classify as BASE (0)
 
-Focus on RGB color values, not alpha channel. Transparent regions are background, not clothing.
+IMPORTANT: Classify transparent pixels (alpha < 50) as BASE (0). Focus on RGB values, not alpha channel.
 
-Output as run-length encoding to compress the 65,536 pixel mask:
+Output as run-length encoding to compress the 16,384 pixel mask:
 {
   "mask": [
     {"value": 0, "count": 1234},
@@ -59,7 +58,7 @@ Output as run-length encoding to compress the 65,536 pixel mask:
 Rules:
 - Start at top-left pixel, proceed row-by-row
 - Group consecutive pixels with same value
-- All runs must sum to exactly 65,536 pixels
+- All runs must sum to exactly 16,384 pixels
 
 Output ONLY valid JSON, no other text."""
 
@@ -94,10 +93,10 @@ Output ONLY valid JSON, no other text."""
         raise RuntimeError(f"Failed to parse Ollama response: {e}\nResponse: {response_text}")
 
     # Decode RLE to flat array
-    flat_mask = decode_rle(rle_mask, length=256*256)
+    flat_mask = decode_rle(rle_data["mask"], length=128*128)
 
     # Reshape to 2D
-    mask_2d = flat_mask.reshape((256, 256))
+    mask_2d = flat_mask.reshape((128, 128))
 
     print(f"   ✓ Segmentation complete: {np.sum(mask_2d == 1)} clothing pixels, {np.sum(mask_2d == 0)} base pixels")
 

@@ -17,10 +17,10 @@ def extract_clothing_semantic(clothed_frame: Image.Image, base_frame: Image.Imag
     """Extract clothing using semantic segmentation with edge refinement.
 
     Pipeline:
-    1. Downscale clothed frame to 256×256 for AI processing
+    1. Downscale clothed frame to 128×128 for AI processing (4x reduction)
     2. AI semantic segmentation: classify each pixel as clothing vs base
     3. Edge detection: find precise boundaries in frame difference
-    4. Boundary snapping: refine AI mask to detected edges
+    4. Boundary snapping: refine AI mask to detected edges (upscale 128→512)
     5. Morphological cleanup: fill holes, remove islands
     6. Apply mask: create transparent image with only clothing visible
 
@@ -42,21 +42,21 @@ def extract_clothing_semantic(clothed_frame: Image.Image, base_frame: Image.Imag
     if clothed_frame.size != base_frame.size:
         raise ValueError(f"Frame dimensions must match: {clothed_frame.size} vs {base_frame.size}")
 
-    print("Step 1/6: Downscaling for AI processing...")
-    # Step 1: Downscale clothed frame to 256×256
-    clothed_256 = clothed_frame.resize((256, 256), Image.LANCZOS)
+    print("Step 1/6: Downscaling for AI processing (512→128)...")
+    # Step 1: Downscale clothed frame to 128×128
+    clothed_128 = clothed_frame.resize((128, 128), Image.LANCZOS)
 
-    print("Step 2/6: AI semantic segmentation...")
-    # Step 2: AI segmentation (returns 256×256 binary mask)
-    mask_256 = call_ollama_segmentation(clothed_256)
+    print("Step 2/6: AI semantic segmentation (128×128)...")
+    # Step 2: AI segmentation (returns 128×128 binary mask)
+    mask_128 = call_ollama_segmentation(clothed_128)
 
     print("Step 3/6: Edge detection...")
     # Step 3: Edge detection on frame difference
     edges_512 = detect_clothing_edges(clothed_frame, base_frame)
 
-    print("Step 4/6: Boundary snapping...")
-    # Step 4: Snap mask boundaries to detected edges
-    mask_512_snapped = snap_mask_to_edges(mask_256, edges_512, search_radius=10)
+    print("Step 4/6: Boundary snapping (128→512)...")
+    # Step 4: Snap mask boundaries to detected edges (upscale 128→512)
+    mask_512_snapped = snap_mask_to_edges(mask_128, edges_512, search_radius=10)
 
     print("Step 5/6: Morphological cleanup...")
     # Step 5: Morphological cleanup
