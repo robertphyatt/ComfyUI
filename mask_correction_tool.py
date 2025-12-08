@@ -57,6 +57,11 @@ class MaskEditor:
         self.is_painting = False
         self.zoom_level = 1.0
 
+        # Undo/redo stacks
+        self.undo_stack = []
+        self.redo_stack = []
+        self.max_undo_levels = 50
+
         # Setup figure
         self.fig, self.axes = plt.subplots(1, 3, figsize=(15, 5))
         self.update_title()
@@ -110,10 +115,53 @@ class MaskEditor:
                     if 0 <= py < 512 and 0 <= px < 512:
                         self.mask[py, px] = value
 
+    def save_state(self):
+        """Save current mask state to undo stack."""
+        # Save a copy of current mask
+        self.undo_stack.append(self.mask.copy())
+
+        # Limit undo stack size
+        if len(self.undo_stack) > self.max_undo_levels:
+            self.undo_stack.pop(0)
+
+        # Clear redo stack when new action is performed
+        self.redo_stack.clear()
+
+        self.update_title()
+
+    def undo(self):
+        """Undo last change."""
+        if not self.undo_stack:
+            return
+
+        # Save current state to redo stack
+        self.redo_stack.append(self.mask.copy())
+
+        # Restore previous state
+        self.mask = self.undo_stack.pop()
+        self.update_display()
+        self.update_title()
+
+    def redo(self):
+        """Redo last undone change."""
+        if not self.redo_stack:
+            return
+
+        # Save current state to undo stack
+        self.undo_stack.append(self.mask.copy())
+
+        # Restore redone state
+        self.mask = self.redo_stack.pop()
+        self.update_display()
+        self.update_title()
+
     def on_mouse_down(self, event):
         """Handle mouse button press."""
         if event.inaxes != self.axes[2]:
             return
+
+        # Save state before starting to paint
+        self.save_state()
 
         self.is_painting = True
 
@@ -154,10 +202,19 @@ class MaskEditor:
 
     def on_key_press(self, event):
         """Handle keyboard shortcuts."""
-        if event.key == 'r':  # Reset to original
+        # Undo: Cmd+Z (Mac) or Ctrl+Z (Windows/Linux)
+        if event.key == 'z' and (event.key == 'cmd+z' or event.key == 'ctrl+z' or
+                                  'cmd' in str(event.key) or 'ctrl' in str(event.key)):
+            if 'shift' in str(event.key):
+                self.redo()  # Cmd+Shift+Z = Redo
+            else:
+                self.undo()  # Cmd+Z = Undo
+        elif event.key == 'r':  # Reset to original
+            self.save_state()
             self.mask = self.original_mask.copy()
             self.update_display()
         elif event.key == 'c':  # Clear all
+            self.save_state()
             self.mask.fill(0)
             self.update_display()
         elif event.key == '+' or event.key == '=':  # Zoom in
@@ -177,11 +234,23 @@ class MaskEditor:
 
     def update_title(self):
         """Update figure title with current tool state."""
-        zoom_str = f"Zoom: {self.zoom_level:.1f}x" if self.zoom_level > 1.0 else ""
-        title = f'Brush: {self.brush_size} | Left: Paint | Right: Erase | Scroll: Brush | Ctrl+Scroll: Zoom'
-        if zoom_str:
-            title = f'{zoom_str} | {title}'
-        self.fig.suptitle(title)
+        # Build title components
+        parts = []
+
+        # Zoom level
+        if self.zoom_level > 1.0:
+            parts.append(f"Zoom: {self.zoom_level:.1f}x")
+
+        # Undo/Redo status
+        undo_str = f"Undo: {len(self.undo_stack)}" if self.undo_stack else "Undo: -"
+        redo_str = f"Redo: {len(self.redo_stack)}" if self.redo_stack else "Redo: -"
+        parts.append(f"{undo_str}/{redo_str}")
+
+        # Controls
+        parts.append(f"Brush: {self.brush_size}")
+        parts.append("Cmd+Z: Undo")
+
+        self.fig.suptitle(" | ".join(parts))
 
     def zoom_on_mask(self, event):
         """Zoom in/out on mask overlay centered on mouse position."""
@@ -318,6 +387,8 @@ def correct_all_masks(frames_dir: Path, initial_masks_dir: Path, corrected_masks
     print("  - Right Click: Remove clothing pixels (erase red)")
     print("  - Scroll: Adjust brush size")
     print("  - Ctrl+Scroll: Zoom in/out (centered on mouse)")
+    print("  - Cmd+Z / Ctrl+Z: Undo last change")
+    print("  - Cmd+Shift+Z / Ctrl+Shift+Z: Redo")
     print("  - +/- keys: Zoom in/out")
     print("  - 0 key: Reset zoom to 1x")
     print("  - 'R' key: Reset to initial mask")
