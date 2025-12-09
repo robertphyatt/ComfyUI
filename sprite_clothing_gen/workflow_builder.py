@@ -249,7 +249,7 @@ def build_ipadapter_generation_workflow(
 
         # 30. Load checkpoint
         "30": {
-            "inputs": {"ckpt_name": "sd_xl_base_1.0.safetensors"},
+            "inputs": {"ckpt_name": "v1-5-pruned-emaonly.safetensors"},
             "class_type": "CheckpointLoaderSimple"
         },
 
