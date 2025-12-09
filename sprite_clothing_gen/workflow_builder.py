@@ -170,3 +170,191 @@ def build_openpose_preprocessing_workflow(
     }
 
     return workflow
+
+
+def build_ipadapter_generation_workflow(
+    base_image_name: str,
+    mask_image_name: str,
+    reference_image_names: list[str],
+    prompt: str = "Brown leather armor, pixel art",
+    negative_prompt: str = "blurry, low quality",
+    seed: int = 12345,
+    steps: int = 35,
+    cfg: float = 7.0,
+    denoise: float = 1.0
+) -> dict:
+    """Build ComfyUI workflow for IPAdapter + ControlNet inpainting.
+
+    Args:
+        base_image_name: Filename of base character image
+        mask_image_name: Filename of inpainting mask
+        reference_image_names: List of 25 clothed reference frame filenames
+        prompt: Positive text prompt
+        negative_prompt: Negative text prompt
+        seed: Random seed for reproducibility
+        steps: Sampling steps
+        cfg: CFG scale
+        denoise: Denoise strength (1.0 = full generation)
+
+    Returns:
+        ComfyUI workflow dict
+    """
+    workflow = {
+        # 1. Load base image
+        "1": {
+            "inputs": {"image": base_image_name},
+            "class_type": "LoadImage"
+        },
+
+        # 2. Load inpainting mask
+        "2": {
+            "inputs": {"image": mask_image_name},
+            "class_type": "LoadImage"
+        },
+
+        # 3. Load IPAdapter model
+        "3": {
+            "inputs": {"ipadapter_file": "ip-adapter_sd15.bin"},
+            "class_type": "IPAdapterModelLoader"
+        },
+
+        # 4-28: Load 25 reference images (clothed frames)
+        # For brevity, we'll load them in a batch node
+        "4": {
+            "inputs": {
+                "mode": "incremental_image",
+                "index": 0,
+                "label": "batch",
+                "path": "input/",
+                "pattern": "clothed_frame_*.png",
+                "allow_RGBA_output": "false"
+            },
+            "class_type": "LoadImageBatch"
+        },
+
+        # 29. Apply IPAdapter
+        "29": {
+            "inputs": {
+                "weight": 0.8,
+                "weight_type": "linear",
+                "start_at": 0.0,
+                "end_at": 1.0,
+                "unfold_batch": "false",
+                "ipadapter": ["3", 0],
+                "image": ["4", 0],  # Reference images
+                "model": ["30", 0]  # Will connect to checkpoint loader
+            },
+            "class_type": "IPAdapterApply"
+        },
+
+        # 30. Load checkpoint
+        "30": {
+            "inputs": {"ckpt_name": "sd_xl_base_1.0.safetensors"},
+            "class_type": "CheckpointLoaderSimple"
+        },
+
+        # 31. Load ControlNet (OpenPose)
+        "31": {
+            "inputs": {"control_net_name": "control_v11p_sd15_openpose.pth"},
+            "class_type": "ControlNetLoader"
+        },
+
+        # 32. OpenPose Preprocessor (extract skeleton from base)
+        "32": {
+            "inputs": {
+                "detect_hand": "enable",
+                "detect_body": "enable",
+                "detect_face": "enable",
+                "resolution": 512,
+                "image": ["1", 0]  # Base image
+            },
+            "class_type": "OpenposePreprocessor"
+        },
+
+        # 33. Apply ControlNet
+        "33": {
+            "inputs": {
+                "strength": 0.9,
+                "start_percent": 0.0,
+                "end_percent": 1.0,
+                "positive": ["34", 0],  # Will connect to CLIP
+                "negative": ["35", 0],
+                "control_net": ["31", 0],
+                "image": ["32", 0]  # OpenPose skeleton
+            },
+            "class_type": "ControlNetApplyAdvanced"
+        },
+
+        # 34. CLIP Text Encode (positive prompt)
+        "34": {
+            "inputs": {
+                "text": prompt,
+                "clip": ["30", 1]  # CLIP from checkpoint
+            },
+            "class_type": "CLIPTextEncode"
+        },
+
+        # 35. CLIP Text Encode (negative prompt)
+        "35": {
+            "inputs": {
+                "text": negative_prompt,
+                "clip": ["30", 1]
+            },
+            "class_type": "CLIPTextEncode"
+        },
+
+        # 36. VAE Encode base image
+        "36": {
+            "inputs": {
+                "pixels": ["1", 0],
+                "vae": ["30", 2]
+            },
+            "class_type": "VAEEncode"
+        },
+
+        # 37. Set Latent Noise Mask (for inpainting)
+        "37": {
+            "inputs": {
+                "samples": ["36", 0],  # Latent from base
+                "mask": ["2", 1]  # Mask image (alpha channel)
+            },
+            "class_type": "SetLatentNoiseMask"
+        },
+
+        # 38. KSampler (inpainting)
+        "38": {
+            "inputs": {
+                "seed": seed,
+                "steps": steps,
+                "cfg": cfg,
+                "sampler_name": "dpmpp_2m",
+                "scheduler": "karras",
+                "denoise": denoise,
+                "model": ["29", 0],  # IPAdapter model
+                "positive": ["33", 0],  # ControlNet conditioning
+                "negative": ["33", 1],
+                "latent_image": ["37", 0]  # Masked latent
+            },
+            "class_type": "KSampler"
+        },
+
+        # 39. VAE Decode
+        "39": {
+            "inputs": {
+                "samples": ["38", 0],
+                "vae": ["30", 2]
+            },
+            "class_type": "VAEDecode"
+        },
+
+        # 40. Save Image
+        "40": {
+            "inputs": {
+                "filename_prefix": "ipadapter_generated",
+                "images": ["39", 0]
+            },
+            "class_type": "SaveImage"
+        }
+    }
+
+    return workflow
