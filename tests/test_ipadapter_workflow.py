@@ -132,3 +132,55 @@ def test_workflow_node_dependencies_are_valid():
 
         # Mark this node as defined
         defined_nodes.add(node_id)
+
+
+def test_workflow_loads_all_reference_images():
+    """Test that workflow uses provided reference_image_names parameter.
+
+    Implementation Note: Uses Approach B from plan - creates individual LoadImage nodes
+    for each reference image and batches them together with ImageBatch nodes.
+    This is necessary because LoadImageBatch doesn't support explicit filename lists.
+    """
+    reference_names = [f"clothed_frame_{i:02d}.png" for i in range(25)]
+
+    workflow = build_ipadapter_generation_workflow(
+        base_image_name="base_frame_00.png",
+        mask_image_name="mask_00.png",
+        reference_image_names=reference_names,
+        prompt="Brown leather armor",
+        negative_prompt="blurry",
+        seed=12345
+    )
+
+    # Verify NO LoadImageBatch with glob pattern exists
+    for node_id, node in workflow.items():
+        if node.get("class_type") == "LoadImageBatch":
+            inputs = node.get("inputs", {})
+            if "pattern" in inputs:
+                assert inputs["pattern"] != "clothed_frame_*.png", \
+                    "LoadImageBatch should not use hardcoded glob pattern when explicit filenames provided"
+
+    # Verify all 25 reference images are loaded as individual LoadImage nodes
+    reference_loaders = []
+    for node_id, node in workflow.items():
+        if node.get("class_type") == "LoadImage":
+            image_name = node.get("inputs", {}).get("image", "")
+            # Check if this is one of our reference images (not base or mask)
+            if image_name in reference_names:
+                reference_loaders.append(image_name)
+
+    assert len(reference_loaders) == 25, \
+        f"Expected 25 individual reference image loaders, got {len(reference_loaders)}"
+
+    # Verify all expected filenames are present
+    for expected_name in reference_names:
+        assert expected_name in reference_loaders, \
+            f"Reference image {expected_name} not found in workflow"
+
+    # Verify reference images are batched together (ImageBatch nodes should exist)
+    batch_nodes = [node for node in workflow.values() if node.get("class_type") == "ImageBatch"]
+    assert len(batch_nodes) > 0, \
+        "No ImageBatch nodes found - reference images not batched together"
+
+    print(f"✓ Successfully loads all {len(reference_loaders)} reference images from parameter")
+    print(f"✓ Uses {len(batch_nodes)} ImageBatch nodes to combine them")
