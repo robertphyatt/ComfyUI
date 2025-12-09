@@ -349,7 +349,7 @@ def build_ipadapter_generation_workflow(
     }
 
     workflow[controlnet_loader_id] = {
-        "inputs": {"control_net_name": "control_v11p_sd15_openpose.pth"},
+        "inputs": {"control_net_name": "control_v11p_sd15_openpose_fp16.safetensors"},
         "class_type": "ControlNetLoader",
         "_meta": {"title": "Load ControlNet"}
     }
