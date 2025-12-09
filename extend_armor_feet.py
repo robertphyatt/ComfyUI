@@ -86,6 +86,8 @@ def main():
     print("✓ Armor extended for all frames")
     print("=" * 70)
 
+    return 0
+
 
 if __name__ == "__main__":
     main()

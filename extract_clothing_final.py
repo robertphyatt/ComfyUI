@@ -70,6 +70,8 @@ def main():
     print(f"✓ Final clothing spritesheet saved to {output_path}")
     print("=" * 70)
 
+    return 0
+
 
 if __name__ == "__main__":
     main()
