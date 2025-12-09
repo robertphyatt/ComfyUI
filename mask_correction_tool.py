@@ -202,10 +202,13 @@ class MaskEditor:
 
     def on_key_press(self, event):
         """Handle keyboard shortcuts."""
+        key_str = str(event.key).lower()
+
         # Undo: Cmd+Z (Mac) or Ctrl+Z (Windows/Linux)
-        if event.key == 'z' and (event.key == 'cmd+z' or event.key == 'ctrl+z' or
-                                  'cmd' in str(event.key) or 'ctrl' in str(event.key)):
-            if 'shift' in str(event.key):
+        # On Mac: 'cmd+z' or 'super+z'
+        # On Windows/Linux: 'ctrl+z'
+        if 'z' in key_str and ('cmd' in key_str or 'ctrl' in key_str or 'super' in key_str):
+            if 'shift' in key_str:
                 self.redo()  # Cmd+Shift+Z = Redo
             else:
                 self.undo()  # Cmd+Z = Undo
