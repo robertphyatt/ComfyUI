@@ -40,12 +40,17 @@ def extract_openpose_keypoints(frame_path: str) -> Dict:
     history = client.wait_for_completion(prompt_id, timeout=60)
 
     # Extract keypoints from history
-    # OpenposePreprocessor outputs keypoints in history['outputs'][node_id]['ui']['openpose_json']
+    # OpenposePreprocessor outputs keypoints at history['outputs'][node_id]['openpose_json']
     outputs = history.get('outputs', {})
     for node_id, node_output in outputs.items():
-        if 'ui' in node_output and 'openpose_json' in node_output['ui']:
-            json_str = node_output['ui']['openpose_json'][0]
-            return json.loads(json_str)
+        if 'openpose_json' in node_output:
+            # The openpose_json is a list with one JSON string element
+            json_str = node_output['openpose_json'][0]
+            # Parse the JSON string which contains a list with one element
+            outer_list = json.loads(json_str)
+            # Extract the keypoints dict from the outer list
+            keypoints = outer_list[0] if outer_list else {'people': []}
+            return keypoints
 
     # No keypoints found
     return {'people': []}
