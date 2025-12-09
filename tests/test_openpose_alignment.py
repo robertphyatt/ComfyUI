@@ -63,37 +63,39 @@ def test_calculate_alignment_offset():
     """Test calculating alignment offset from two sets of keypoints."""
     from align_with_openpose import calculate_alignment_offset
 
-    # Base frame keypoints (person centered at 100, 100)
+    # OpenPose returns normalized coordinates (0.0 to 1.0)
+    # Base frame keypoints (person centered at normalized 0.2, 0.2 = pixel 102.4, 102.4)
     base_kp = {
         'people': [{
             'pose_keypoints_2d': [
                 0, 0, 0,  # nose
-                100, 100, 0.9,  # neck
-                90, 110, 0.9,  # right shoulder
+                0.2, 0.2, 0.9,  # neck
+                0.18, 0.22, 0.9,  # right shoulder
                 0, 0, 0, 0, 0, 0,  # elbow, wrist
-                110, 110, 0.9,  # left shoulder
+                0.22, 0.22, 0.9,  # left shoulder
             ] + [0] * 42
         }]
     }
 
-    # Clothed frame keypoints (person offset by +10, +5)
+    # Clothed frame keypoints (offset by +0.02, +0.01 normalized = +10.24, +5.12 pixels)
     clothed_kp = {
         'people': [{
             'pose_keypoints_2d': [
                 0, 0, 0,
-                110, 105, 0.9,  # neck at 110, 105
-                100, 115, 0.9,  # right shoulder at 100, 115
+                0.22, 0.21, 0.9,  # neck at 0.22, 0.21
+                0.20, 0.23, 0.9,  # right shoulder at 0.20, 0.23
                 0, 0, 0, 0, 0, 0,
-                120, 115, 0.9,  # left shoulder at 120, 115
+                0.24, 0.23, 0.9,  # left shoulder at 0.24, 0.23
             ] + [0] * 42
         }]
     }
 
     offset_x, offset_y = calculate_alignment_offset(base_kp, clothed_kp)
 
-    # Base center: (100+90+110)/3 = 100, (100+110+110)/3 ≈ 106.67
-    # Clothed center: (110+100+120)/3 = 110, (105+115+115)/3 ≈ 111.67
-    # Offset: 100 - 110 = -10, 106.67 - 111.67 = -5
+    # Base center: (0.2+0.18+0.22)/3 = 0.2, (0.2+0.22+0.22)/3 ≈ 0.2133
+    # Clothed center: (0.22+0.20+0.24)/3 = 0.22, (0.21+0.23+0.23)/3 ≈ 0.2233
+    # In pixels (×512): Base=(102.4, 109.2), Clothed=(112.6, 114.3)
+    # Offset: 102.4 - 112.6 ≈ -10, 109.2 - 114.3 ≈ -5
     assert offset_x == -10
     assert offset_y == -5
 

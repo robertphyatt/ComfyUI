@@ -89,22 +89,30 @@ def parse_keypoints(keypoints: Dict) -> Tuple[float, float]:
     return center_x, center_y
 
 
-def calculate_alignment_offset(base_keypoints: Dict, clothed_keypoints: Dict) -> Tuple[int, int]:
+def calculate_alignment_offset(base_keypoints: Dict, clothed_keypoints: Dict, image_size: int = 512) -> Tuple[int, int]:
     """Calculate pixel offset needed to align clothed frame to base frame.
 
     Args:
         base_keypoints: OpenPose keypoints for base frame
         clothed_keypoints: OpenPose keypoints for clothed frame
+        image_size: Image dimensions in pixels (default 512)
 
     Returns:
         (offset_x, offset_y) tuple in pixels
     """
+    # Get normalized centers (0.0 to 1.0)
     base_center_x, base_center_y = parse_keypoints(base_keypoints)
     clothed_center_x, clothed_center_y = parse_keypoints(clothed_keypoints)
 
-    # Calculate offset to move clothed center to base center
-    offset_x = int(base_center_x - clothed_center_x)
-    offset_y = int(base_center_y - clothed_center_y)
+    # Convert to pixel coordinates BEFORE calculating offset
+    base_px_x = base_center_x * image_size
+    base_px_y = base_center_y * image_size
+    clothed_px_x = clothed_center_x * image_size
+    clothed_px_y = clothed_center_y * image_size
+
+    # Calculate pixel offset
+    offset_x = int(base_px_x - clothed_px_x)
+    offset_y = int(base_px_y - clothed_px_y)
 
     return offset_x, offset_y
 
