@@ -337,16 +337,15 @@ def build_ipadapter_generation_workflow(
     workflow[ipadapter_apply_id] = {
         "inputs": {
             "weight": 0.8,
-            "weight_type": "linear",
+            "weight_type": "style transfer",  # Fixed: use valid IPAdapter weight_type
             "start_at": 0.0,
             "end_at": 1.0,
-            "unfold_batch": "false",
             "ipadapter": ["3", 0],
             "image": [final_batch_node, 0],  # Reference images from final batch
             "model": [checkpoint_node_id, 0]
         },
-        "class_type": "IPAdapterApply",
-        "_meta": {"title": "IPAdapter Apply"}
+        "class_type": "IPAdapter",  # Fixed: use correct node name
+        "_meta": {"title": "IPAdapter"}
     }
 
     workflow[controlnet_loader_id] = {
