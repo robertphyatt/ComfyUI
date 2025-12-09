@@ -19,7 +19,8 @@ import time
 import signal
 import atexit
 from pathlib import Path
-from align_with_openpose import main as align_main
+from generate_with_ipadapter import main as ipadapter_main
+from generate_inpainting_masks import main as mask_gen_main
 from extend_armor_feet import main as extend_main
 from validate_predicted_masks import main as validate_main
 from extract_clothing_final import main as extract_main
@@ -99,12 +100,13 @@ def main():
     print()
     print("This pipeline will:")
     print("  1. Start ComfyUI server")
-    print("  2. Align clothed frames to base using OpenPose skeleton matching")
-    print("  3. Extend armor to cover feet")
-    print("  4. Generate initial masks using trained U-Net model")
-    print("  5. Open mask validation tool for manual review")
-    print("  6. Extract final clothing spritesheet from validated masks")
-    print("  7. Stop ComfyUI server")
+    print("  2. Generate inpainting masks")
+    print("  3. Generate clothed frames using IPAdapter + ControlNet")
+    print("  4. Extend armor to cover feet")
+    print("  5. Generate initial masks using trained U-Net model")
+    print("  6. Open mask validation tool for manual review")
+    print("  7. Extract final clothing spritesheet from validated masks")
+    print("  8. Stop ComfyUI server")
     print()
     print("=" * 70)
     print()
@@ -115,14 +117,24 @@ def main():
         return 1
 
     try:
-        # Step 1: Align frames using OpenPose
+        # Step 0.5: Generate inpainting masks
         print("\n" + "=" * 70)
-        print("STEP 1/5: Aligning frames with OpenPose")
+        print("STEP 0.5/5: Generating inpainting masks")
         print("=" * 70 + "\n")
 
-        result = align_main()
+        result = mask_gen_main()
         if result != 0:
-            print("ERROR: OpenPose alignment failed")
+            print("ERROR: Mask generation failed")
+            return 1
+
+        # Step 1: Generate clothed frames with IPAdapter
+        print("\n" + "=" * 70)
+        print("STEP 1/5: Generating with IPAdapter + ControlNet")
+        print("=" * 70 + "\n")
+
+        result = ipadapter_main()
+        if result != 0:
+            print("ERROR: IPAdapter generation failed")
             return 1
 
         # Step 2: Extend armor to cover feet
@@ -144,7 +156,7 @@ def main():
         result = subprocess.run([
             sys.executable,
             "predict_masks_with_model.py",
-            "--frames-dir", "training_data/frames_complete_openpose",
+            "--frames-dir", "training_data/frames_complete_ipadapter",
             "--output-dir", "training_data_validation/masks_corrected"
         ])
 
@@ -166,7 +178,7 @@ def main():
         val_frames.mkdir(parents=True, exist_ok=True)
 
         for i in range(25):
-            src = Path(f"training_data/frames_complete_openpose/clothed_frame_{i:02d}.png")
+            src = Path(f"training_data/frames_complete_ipadapter/clothed_frame_{i:02d}.png")
             dst = val_frames / f"clothed_frame_{i:02d}.png"
             shutil.copy(src, dst)
 
@@ -183,9 +195,9 @@ def main():
         # Update extraction to use validated masks
         from extract_clothing_final import extract_with_validated_masks
 
-        output_path = Path("training_data/clothing_spritesheet_final.png")
+        output_path = Path("training_data/clothing_spritesheet_ipadapter.png")
         extract_with_validated_masks(
-            frames_dir=Path("training_data/frames_complete_openpose"),
+            frames_dir=Path("training_data/frames_complete_ipadapter"),
             masks_dir=Path("training_data_validation/masks_corrected"),
             output_path=output_path
         )

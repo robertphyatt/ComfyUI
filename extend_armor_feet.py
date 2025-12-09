@@ -48,10 +48,10 @@ def extend_armor_to_cover_feet(clothed_frame: Image.Image, base_frame: Image.Ima
 
 
 def main():
-    """Extend armor in all OpenPose-aligned frames."""
+    """Extend armor in all IPAdapter-generated frames."""
     frames_dir = Path("training_data/frames")
-    aligned_dir = Path("training_data/frames_aligned_openpose")
-    output_dir = Path("training_data/frames_complete_openpose")
+    generated_dir = Path("training_data/frames_ipadapter_generated")
+    output_dir = Path("training_data/frames_complete_ipadapter")
     output_dir.mkdir(exist_ok=True)
 
     print("=" * 70)
@@ -63,13 +63,13 @@ def main():
         print(f"Frame {frame_idx:02d}:")
 
         base_path = frames_dir / f"base_frame_{frame_idx:02d}.png"
-        aligned_path = aligned_dir / f"clothed_frame_{frame_idx:02d}.png"
+        generated_path = generated_dir / f"clothed_frame_{frame_idx:02d}.png"
 
         base = Image.open(base_path)
-        aligned = Image.open(aligned_path)
+        generated = Image.open(generated_path)
 
         # Extend armor
-        extended = extend_armor_to_cover_feet(aligned, base)
+        extended = extend_armor_to_cover_feet(generated, base)
 
         # Save
         output_path = output_dir / f"clothed_frame_{frame_idx:02d}.png"
