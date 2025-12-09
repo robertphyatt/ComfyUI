@@ -1,5 +1,6 @@
 """Build ComfyUI workflows for clothing generation."""
 
+import math
 from typing import Dict, Any
 from sprite_clothing_gen.config import (
     CHECKPOINT_MODEL,
@@ -212,10 +213,16 @@ def build_ipadapter_generation_workflow(
             "class_type": "LoadImage"
         },
 
-        # 3. Load IPAdapter model
+        # 3. Load IPAdapter with Unified Loader (loads both IPAdapter + CLIPVision)
+        # Note: References checkpoint_node_id which is calculated later
+        # ComfyUI handles execution order via dataflow, not node ID order
         "3": {
-            "inputs": {"ipadapter_file": "ip-adapter_sd15.bin"},
-            "class_type": "IPAdapterModelLoader"
+            "inputs": {
+                "model": [checkpoint_node_id, 0],  # Model from checkpoint
+                "preset": "PLUS (high strength)"    # SD1.5 high-strength preset
+            },
+            "class_type": "IPAdapterUnifiedLoader",
+            "_meta": {"title": "IPAdapter Unified Loader"}
         },
     }
 
@@ -223,6 +230,16 @@ def build_ipadapter_generation_workflow(
     # NOTE: Using Approach B from plan - LoadImageBatch doesn't support explicit filename lists
     # Instead, we create individual LoadImage nodes and batch them with ImageBatch
     # This properly uses the reference_image_names parameter instead of ignoring it
+
+    # Calculate checkpoint node ID first (needed by IPAdapterUnifiedLoader at node 3)
+    # We need 25 LoadImage nodes (4-28) + up to 24 ImageBatch nodes
+    # Checkpoint will be after all batching
+    # Reserve nodes 4-28 for reference loaders, 29+ for batching
+    # Calculate checkpoint_node_id based on batching tree depth
+    num_references = len(reference_image_names)
+    # Binary tree has n-1 internal nodes for n leaves
+    max_batch_nodes = num_references - 1
+    checkpoint_node_id = str(29 + max_batch_nodes)  # After all batch nodes
 
     # Start with node ID 4, allocate enough IDs for loaders and batchers
     # We need 25 LoadImage nodes + 24 ImageBatch nodes = 49 nodes total
@@ -340,9 +357,9 @@ def build_ipadapter_generation_workflow(
             "weight_type": "style transfer",  # Fixed: use valid IPAdapter weight_type
             "start_at": 0.0,
             "end_at": 1.0,
-            "ipadapter": ["3", 0],
+            "ipadapter": ["3", 1],  # IPAdapter dict from IPAdapterUnifiedLoader output [1]
             "image": [final_batch_node, 0],  # Reference images from final batch
-            "model": [checkpoint_node_id, 0]
+            "model": ["3", 0]  # Model from IPAdapterUnifiedLoader output [0]
         },
         "class_type": "IPAdapter",  # Fixed: use correct node name
         "_meta": {"title": "IPAdapter"}
