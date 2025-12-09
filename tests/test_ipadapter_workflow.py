@@ -95,3 +95,40 @@ def test_workflow_uses_sd15_models_consistently():
     controlnet_name = controlnet_node["inputs"]["control_net_name"]
     assert "sd15" in controlnet_name.lower(), \
         f"Expected SD1.5 ControlNet, got: {controlnet_name}"
+
+
+def test_workflow_node_dependencies_are_valid():
+    """Test that all node references point to nodes that appear earlier in workflow."""
+    workflow = build_ipadapter_generation_workflow(
+        base_image_name="base_frame_00.png",
+        mask_image_name="mask_00.png",
+        reference_image_names=[f"clothed_frame_{i:02d}.png" for i in range(25)],
+        prompt="Brown leather armor",
+        negative_prompt="blurry",
+        seed=12345
+    )
+
+    # Track which nodes have been defined
+    defined_nodes = set()
+
+    # Process nodes in order
+    for node_id, node in workflow.items():
+        node_id_int = int(node_id)
+
+        # Check all input references
+        inputs = node.get("inputs", {})
+        for input_name, input_value in inputs.items():
+            # Input references are [node_id, output_index] tuples
+            if isinstance(input_value, list) and len(input_value) == 2:
+                referenced_node_id = str(input_value[0])
+                referenced_node_int = int(referenced_node_id)
+
+                # Referenced node must be defined BEFORE current node
+                assert referenced_node_int < node_id_int, \
+                    f"Node {node_id} references node {referenced_node_id} which appears later (circular dependency)"
+
+                assert referenced_node_id in defined_nodes, \
+                    f"Node {node_id} references undefined node {referenced_node_id}"
+
+        # Mark this node as defined
+        defined_nodes.add(node_id)

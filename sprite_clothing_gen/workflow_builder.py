@@ -232,8 +232,14 @@ def build_ipadapter_generation_workflow(
             "class_type": "LoadImageBatch"
         },
 
-        # 29. Apply IPAdapter
+        # 29. Load checkpoint
         "29": {
+            "inputs": {"ckpt_name": "v1-5-pruned-emaonly.safetensors"},
+            "class_type": "CheckpointLoaderSimple"
+        },
+
+        # 30. Apply IPAdapter
+        "30": {
             "inputs": {
                 "weight": 0.8,
                 "weight_type": "linear",
@@ -242,15 +248,9 @@ def build_ipadapter_generation_workflow(
                 "unfold_batch": "false",
                 "ipadapter": ["3", 0],
                 "image": ["4", 0],  # Reference images
-                "model": ["30", 0]  # Will connect to checkpoint loader
+                "model": ["29", 0]  # Now correctly references node 29 (checkpoint loader)
             },
             "class_type": "IPAdapterApply"
-        },
-
-        # 30. Load checkpoint
-        "30": {
-            "inputs": {"ckpt_name": "v1-5-pruned-emaonly.safetensors"},
-            "class_type": "CheckpointLoaderSimple"
         },
 
         # 31. Load ControlNet (OpenPose)
@@ -271,43 +271,43 @@ def build_ipadapter_generation_workflow(
             "class_type": "OpenposePreprocessor"
         },
 
-        # 33. Apply ControlNet
+        # 33. CLIP Text Encode (positive prompt)
         "33": {
+            "inputs": {
+                "text": prompt,
+                "clip": ["29", 1]  # CLIP from checkpoint (node 29)
+            },
+            "class_type": "CLIPTextEncode"
+        },
+
+        # 34. CLIP Text Encode (negative prompt)
+        "34": {
+            "inputs": {
+                "text": negative_prompt,
+                "clip": ["29", 1]  # CLIP from checkpoint (node 29)
+            },
+            "class_type": "CLIPTextEncode"
+        },
+
+        # 35. Apply ControlNet
+        "35": {
             "inputs": {
                 "strength": 0.9,
                 "start_percent": 0.0,
                 "end_percent": 1.0,
-                "positive": ["34", 0],  # Will connect to CLIP
-                "negative": ["35", 0],
+                "positive": ["33", 0],  # CLIP positive (node 33)
+                "negative": ["34", 0],  # CLIP negative (node 34)
                 "control_net": ["31", 0],
                 "image": ["32", 0]  # OpenPose skeleton
             },
             "class_type": "ControlNetApplyAdvanced"
         },
 
-        # 34. CLIP Text Encode (positive prompt)
-        "34": {
-            "inputs": {
-                "text": prompt,
-                "clip": ["30", 1]  # CLIP from checkpoint
-            },
-            "class_type": "CLIPTextEncode"
-        },
-
-        # 35. CLIP Text Encode (negative prompt)
-        "35": {
-            "inputs": {
-                "text": negative_prompt,
-                "clip": ["30", 1]
-            },
-            "class_type": "CLIPTextEncode"
-        },
-
         # 36. VAE Encode base image
         "36": {
             "inputs": {
                 "pixels": ["1", 0],
-                "vae": ["30", 2]
+                "vae": ["29", 2]  # VAE from checkpoint (node 29)
             },
             "class_type": "VAEEncode"
         },
@@ -330,9 +330,9 @@ def build_ipadapter_generation_workflow(
                 "sampler_name": "dpmpp_2m",
                 "scheduler": "karras",
                 "denoise": denoise,
-                "model": ["29", 0],  # IPAdapter model
-                "positive": ["33", 0],  # ControlNet conditioning
-                "negative": ["33", 1],
+                "model": ["30", 0],  # IPAdapter model (node 30)
+                "positive": ["35", 0],  # ControlNet conditioning (node 35)
+                "negative": ["35", 1],
                 "latent_image": ["37", 0]  # Masked latent
             },
             "class_type": "KSampler"
@@ -342,7 +342,7 @@ def build_ipadapter_generation_workflow(
         "39": {
             "inputs": {
                 "samples": ["38", 0],
-                "vae": ["30", 2]
+                "vae": ["29", 2]  # VAE from checkpoint (node 29)
             },
             "class_type": "VAEDecode"
         },
