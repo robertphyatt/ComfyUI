@@ -312,15 +312,15 @@ class MaskEditor:
 
     def add_buttons(self):
         """Add save/cancel buttons."""
-        # Save button
+        # Save button (store as instance var to prevent garbage collection)
         save_ax = plt.axes([0.7, 0.01, 0.1, 0.04])
-        save_btn = Button(save_ax, 'Save')
-        save_btn.on_clicked(lambda e: self.save_and_close())
+        self.save_btn = Button(save_ax, 'Save')
+        self.save_btn.on_clicked(lambda e: self.save_and_close())
 
-        # Cancel button
+        # Cancel button (store as instance var to prevent garbage collection)
         cancel_ax = plt.axes([0.82, 0.01, 0.1, 0.04])
-        cancel_btn = Button(cancel_ax, 'Cancel')
-        cancel_btn.on_clicked(lambda e: plt.close())
+        self.cancel_btn = Button(cancel_ax, 'Cancel')
+        self.cancel_btn.on_clicked(lambda e: plt.close())
 
     def save_and_close(self):
         """Mark as saved and close."""
