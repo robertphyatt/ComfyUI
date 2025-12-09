@@ -3,11 +3,13 @@
 
 Runs complete workflow:
 1. Start ComfyUI server
-2. Align clothed frames to base using OpenPose
-3. Extend armor to cover feet
-4. Open mask validation tool for user review
-5. Extract final clothing spritesheet
-6. Stop ComfyUI server
+2. Generate inpainting masks from alpha channel
+3. Generate clothed frames using IPAdapter + ControlNet
+4. Extend armor to cover feet
+5. Generate initial masks using trained U-Net model
+6. Open mask validation tool for manual review
+7. Extract final clothing spritesheet from validated masks
+8. Stop ComfyUI server
 
 Usage:
     python process_clothing_spritesheet.py
@@ -111,15 +113,15 @@ def main():
     print("=" * 70)
     print()
 
-    # Step 0: Start ComfyUI server
+    # Start ComfyUI server (not counted in step numbering)
     if not start_comfyui_server():
         print("ERROR: Failed to start ComfyUI server")
         return 1
 
     try:
-        # Step 0.5: Generate inpainting masks
+        # Step 1: Generate inpainting masks
         print("\n" + "=" * 70)
-        print("STEP 0.5/5: Generating inpainting masks")
+        print("STEP 1/7: Generating inpainting masks")
         print("=" * 70 + "\n")
 
         result = mask_gen_main()
@@ -127,9 +129,9 @@ def main():
             print("ERROR: Mask generation failed")
             return 1
 
-        # Step 1: Generate clothed frames with IPAdapter
+        # Step 2: Generate clothed frames with IPAdapter
         print("\n" + "=" * 70)
-        print("STEP 1/5: Generating with IPAdapter + ControlNet")
+        print("STEP 2/7: Generating with IPAdapter + ControlNet")
         print("=" * 70 + "\n")
 
         result = ipadapter_main()
@@ -137,9 +139,9 @@ def main():
             print("ERROR: IPAdapter generation failed")
             return 1
 
-        # Step 2: Extend armor to cover feet
+        # Step 3: Extend armor to cover feet
         print("\n" + "=" * 70)
-        print("STEP 2/5: Extending armor to cover feet")
+        print("STEP 3/7: Extending armor to cover feet")
         print("=" * 70 + "\n")
 
         result = extend_main()
@@ -147,9 +149,9 @@ def main():
             print("ERROR: Armor extension failed")
             return 1
 
-        # Step 3: Generate initial masks with U-Net
+        # Step 4: Generate initial masks with U-Net
         print("\n" + "=" * 70)
-        print("STEP 3/5: Generating masks with trained U-Net model")
+        print("STEP 4/7: Generating masks with trained U-Net model")
         print("=" * 70 + "\n")
 
         import subprocess
@@ -164,9 +166,9 @@ def main():
             print("ERROR: Mask prediction failed")
             return 1
 
-        # Step 4: Open mask validation tool
+        # Step 5: Open mask validation tool
         print("\n" + "=" * 70)
-        print("STEP 4/5: Opening mask validation tool")
+        print("STEP 5/7: Opening mask validation tool")
         print("=" * 70 + "\n")
         print("Review and correct masks as needed...")
         print("Press Save to accept each mask and move to next frame")
@@ -187,9 +189,9 @@ def main():
             print("ERROR: Mask validation failed or cancelled")
             return 1
 
-        # Step 5: Extract final clothing spritesheet
+        # Step 6: Extract final clothing spritesheet
         print("\n" + "=" * 70)
-        print("STEP 5/5: Extracting final clothing spritesheet")
+        print("STEP 6/7: Extracting final clothing spritesheet")
         print("=" * 70 + "\n")
 
         # Update extraction to use validated masks
@@ -221,7 +223,10 @@ def main():
         return 0
 
     finally:
-        # Always stop server, even if pipeline fails
+        # Step 7: Stop server
+        print("\n" + "=" * 70)
+        print("STEP 7/7: Stopping ComfyUI server")
+        print("=" * 70 + "\n")
         stop_comfyui_server()
 
 
