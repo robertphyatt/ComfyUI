@@ -193,10 +193,10 @@ def main():
     corrected_masks_dir = Path("training_data/masks_corrected")
     initial_masks_dir = Path("training_data/masks_initial")
 
-    # Training frames (0-5 that you've already labeled)
-    train_frames = list(range(6))
-    # Prediction frames (6-24 that need better initial masks)
-    predict_frames = list(range(6, 25))
+    # Training frames (0-17 that you've already labeled)
+    train_frames = list(range(18))
+    # Prediction frames (18-24 that need better initial masks)
+    predict_frames = list(range(18, 25))
 
     print("=" * 70)
     print("Training U-Net on corrected masks")
