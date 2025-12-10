@@ -200,6 +200,16 @@ def build_ipadapter_generation_workflow(
     Returns:
         ComfyUI workflow dict
     """
+    # Calculate checkpoint node ID FIRST (needed by IPAdapterUnifiedLoader at node 3)
+    # We need 25 LoadImage nodes (4-28) + up to 24 ImageBatch nodes
+    # Checkpoint will be after all batching
+    # Reserve nodes 4-28 for reference loaders, 29+ for batching
+    # Calculate checkpoint_node_id based on batching tree depth
+    num_references = len(reference_image_names)
+    # Binary tree has n-1 internal nodes for n leaves
+    max_batch_nodes = num_references - 1
+    checkpoint_node_id = str(29 + max_batch_nodes)  # After all batch nodes
+
     workflow = {
         # 1. Load base image
         "1": {
@@ -214,8 +224,6 @@ def build_ipadapter_generation_workflow(
         },
 
         # 3. Load IPAdapter with Unified Loader (loads both IPAdapter + CLIPVision)
-        # Note: References checkpoint_node_id which is calculated later
-        # ComfyUI handles execution order via dataflow, not node ID order
         "3": {
             "inputs": {
                 "model": [checkpoint_node_id, 0],  # Model from checkpoint
@@ -230,16 +238,6 @@ def build_ipadapter_generation_workflow(
     # NOTE: Using Approach B from plan - LoadImageBatch doesn't support explicit filename lists
     # Instead, we create individual LoadImage nodes and batch them with ImageBatch
     # This properly uses the reference_image_names parameter instead of ignoring it
-
-    # Calculate checkpoint node ID first (needed by IPAdapterUnifiedLoader at node 3)
-    # We need 25 LoadImage nodes (4-28) + up to 24 ImageBatch nodes
-    # Checkpoint will be after all batching
-    # Reserve nodes 4-28 for reference loaders, 29+ for batching
-    # Calculate checkpoint_node_id based on batching tree depth
-    num_references = len(reference_image_names)
-    # Binary tree has n-1 internal nodes for n leaves
-    max_batch_nodes = num_references - 1
-    checkpoint_node_id = str(29 + max_batch_nodes)  # After all batch nodes
 
     # Start with node ID 4, allocate enough IDs for loaders and batchers
     # We need 25 LoadImage nodes + 24 ImageBatch nodes = 49 nodes total
@@ -334,10 +332,9 @@ def build_ipadapter_generation_workflow(
     batch_node_id += 1
     controlnet_apply_id = str(batch_node_id)
     batch_node_id += 1
-    vae_encode_id = str(batch_node_id)
+    vae_encode_id = str(batch_node_id)  # Will be renamed to empty_latent_id below
     batch_node_id += 1
-    set_mask_id = str(batch_node_id)
-    batch_node_id += 1
+    # set_mask_id removed - no longer using SetLatentNoiseMask (txt2img instead of img2img)
     ksampler_id = str(batch_node_id)
     batch_node_id += 1
     vae_decode_id = str(batch_node_id)
@@ -415,23 +412,19 @@ def build_ipadapter_generation_workflow(
         "_meta": {"title": "Apply ControlNet"}
     }
 
-    workflow[vae_encode_id] = {
+    empty_latent_id = vae_encode_id  # Reuse variable name for cleaner refactor
+    workflow[empty_latent_id] = {
         "inputs": {
-            "pixels": ["1", 0],
-            "vae": [checkpoint_node_id, 2]
+            "width": 512,
+            "height": 512,
+            "batch_size": 1
         },
-        "class_type": "VAEEncode",
-        "_meta": {"title": "VAE Encode"}
+        "class_type": "EmptyLatentImage",
+        "_meta": {"title": "Empty Latent Image"}
     }
 
-    workflow[set_mask_id] = {
-        "inputs": {
-            "samples": [vae_encode_id, 0],
-            "mask": ["2", 1]  # Mask image (alpha channel)
-        },
-        "class_type": "SetLatentNoiseMask",
-        "_meta": {"title": "Set Latent Noise Mask"}
-    }
+    # Note: SetLatentNoiseMask removed - using txt2img (denoise=1.0) instead of img2img
+    # KSampler will use EmptyLatentImage directly
 
     workflow[ksampler_id] = {
         "inputs": {
@@ -444,10 +437,10 @@ def build_ipadapter_generation_workflow(
             "model": [ipadapter_apply_id, 0],
             "positive": [controlnet_apply_id, 0],
             "negative": [controlnet_apply_id, 1],
-            "latent_image": [set_mask_id, 0]
+            "latent_image": [empty_latent_id, 0]  # Changed from set_mask_id to empty_latent_id
         },
         "class_type": "KSampler",
-        "_meta": {"title": "KSampler (Inpainting)"}
+        "_meta": {"title": "KSampler (txt2img with denoise=1.0)"}
     }
 
     workflow[vae_decode_id] = {
