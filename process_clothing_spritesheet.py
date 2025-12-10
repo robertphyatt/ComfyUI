@@ -26,6 +26,7 @@ from generate_inpainting_masks import main as mask_gen_main
 from extend_armor_feet import main as extend_main
 from validate_predicted_masks import main as validate_main
 from extract_clothing_final import main as extract_main
+from extract_training_frames import main as extract_frames_main
 
 # Global variable to track ComfyUI process
 _comfyui_process = None
@@ -101,27 +102,38 @@ def main():
     print("=" * 70)
     print()
     print("This pipeline will:")
-    print("  1. Start ComfyUI server")
-    print("  2. Generate inpainting masks")
-    print("  3. Generate clothed frames using IPAdapter + ControlNet")
-    print("  4. Extend armor to cover feet")
-    print("  5. Generate initial masks using trained U-Net model")
-    print("  6. Open mask validation tool for manual review")
-    print("  7. Extract final clothing spritesheet from validated masks")
-    print("  8. Stop ComfyUI server")
+    print("  1. Extract frames from reference spritesheets")
+    print("  2. Start ComfyUI server")
+    print("  3. Generate inpainting masks")
+    print("  4. Generate clothed frames using IPAdapter + ControlNet")
+    print("  5. Extend armor to cover feet")
+    print("  6. Generate initial masks using trained U-Net model")
+    print("  7. Open mask validation tool for manual review")
+    print("  8. Extract final clothing spritesheet from validated masks")
+    print("  9. Stop ComfyUI server")
     print()
     print("=" * 70)
     print()
 
-    # Start ComfyUI server (not counted in step numbering)
+    # Step 1: Extract frames from spritesheets
+    print("\n" + "=" * 70)
+    print("STEP 1/8: Extracting frames from reference spritesheets")
+    print("=" * 70 + "\n")
+
+    result = extract_frames_main()
+    if result != 0:
+        print("ERROR: Frame extraction failed")
+        return 1
+
+    # Start ComfyUI server
     if not start_comfyui_server():
         print("ERROR: Failed to start ComfyUI server")
         return 1
 
     try:
-        # Step 1: Generate inpainting masks
+        # Step 2: Generate inpainting masks
         print("\n" + "=" * 70)
-        print("STEP 1/7: Generating inpainting masks")
+        print("STEP 2/8: Generating inpainting masks")
         print("=" * 70 + "\n")
 
         result = mask_gen_main()
@@ -129,9 +141,9 @@ def main():
             print("ERROR: Mask generation failed")
             return 1
 
-        # Step 2: Generate clothed frames with IPAdapter
+        # Step 3: Generate clothed frames with IPAdapter
         print("\n" + "=" * 70)
-        print("STEP 2/7: Generating with IPAdapter + ControlNet")
+        print("STEP 3/8: Generating with IPAdapter + ControlNet")
         print("=" * 70 + "\n")
 
         result = ipadapter_main()
@@ -139,9 +151,9 @@ def main():
             print("ERROR: IPAdapter generation failed")
             return 1
 
-        # Step 3: Extend armor to cover feet
+        # Step 4: Extend armor to cover feet
         print("\n" + "=" * 70)
-        print("STEP 3/7: Extending armor to cover feet")
+        print("STEP 4/8: Extending armor to cover feet")
         print("=" * 70 + "\n")
 
         result = extend_main()
@@ -149,9 +161,9 @@ def main():
             print("ERROR: Armor extension failed")
             return 1
 
-        # Step 4: Generate initial masks with U-Net
+        # Step 5: Generate initial masks with U-Net
         print("\n" + "=" * 70)
-        print("STEP 4/7: Generating masks with trained U-Net model")
+        print("STEP 5/8: Generating masks with trained U-Net model")
         print("=" * 70 + "\n")
 
         import subprocess
@@ -166,9 +178,9 @@ def main():
             print("ERROR: Mask prediction failed")
             return 1
 
-        # Step 5: Open mask validation tool
+        # Step 6: Open mask validation tool
         print("\n" + "=" * 70)
-        print("STEP 5/7: Opening mask validation tool")
+        print("STEP 6/8: Opening mask validation tool")
         print("=" * 70 + "\n")
         print("Review and correct masks as needed...")
         print("Press Save to accept each mask and move to next frame")
@@ -189,9 +201,9 @@ def main():
             print("ERROR: Mask validation failed or cancelled")
             return 1
 
-        # Step 6: Extract final clothing spritesheet
+        # Step 7: Extract final clothing spritesheet
         print("\n" + "=" * 70)
-        print("STEP 6/7: Extracting final clothing spritesheet")
+        print("STEP 7/8: Extracting final clothing spritesheet")
         print("=" * 70 + "\n")
 
         # Update extraction to use validated masks
@@ -223,9 +235,9 @@ def main():
         return 0
 
     finally:
-        # Step 7: Stop server
+        # Step 8: Stop server
         print("\n" + "=" * 70)
-        print("STEP 7/7: Stopping ComfyUI server")
+        print("STEP 8/8: Stopping ComfyUI server")
         print("=" * 70 + "\n")
         stop_comfyui_server()
 
