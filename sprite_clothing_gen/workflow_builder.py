@@ -350,16 +350,18 @@ def build_ipadapter_generation_workflow(
 
     workflow[ipadapter_apply_id] = {
         "inputs": {
-            "weight": 0.8,
-            "weight_type": "style transfer",  # Fixed: use valid IPAdapter weight_type
+            "weight": 1.0,  # Match working test configuration
+            "weight_type": "style and composition",  # Transfer both clothing style and structure
+            "combine_embeds": "concat",  # Combine multiple reference images
             "start_at": 0.0,
             "end_at": 1.0,
+            "embeds_scaling": "V only",  # Standard scaling
             "ipadapter": ["3", 1],  # IPAdapter dict from IPAdapterUnifiedLoader output [1]
             "image": [final_batch_node, 0],  # Reference images from final batch
             "model": ["3", 0]  # Model from IPAdapterUnifiedLoader output [0]
         },
-        "class_type": "IPAdapter",  # Fixed: use correct node name
-        "_meta": {"title": "IPAdapter"}
+        "class_type": "IPAdapterAdvanced",  # Use Advanced node for full weight_type options
+        "_meta": {"title": "IPAdapter Advanced"}
     }
 
     workflow[controlnet_loader_id] = {
