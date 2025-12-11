@@ -46,7 +46,30 @@ def log(message):
     print(f"[{timestamp}] {message}")
 
 
+def setup_test_directories():
+    """Create clean test output directories."""
+    base_dir = Path("output/tile_test")
+
+    # Remove old test runs
+    if base_dir.exists():
+        log(f"Removing old test directory: {base_dir}")
+        shutil.rmtree(base_dir)
+
+    # Create subdirectories for each strength level
+    strengths = [0.6, 0.8, 1.0]
+    for strength in strengths:
+        dir_path = base_dir / f"frame_04_strength_{strength}"
+        dir_path.mkdir(parents=True, exist_ok=True)
+        log(f"Created test directory: {dir_path}")
+
+    return base_dir, strengths
+
+
 if __name__ == "__main__":
     log_file = setup_logging()
     log("ControlNet Tile Test Starting")
     log(f"Working directory: {os.getcwd()}")
+
+    test_dir, strengths = setup_test_directories()
+    log(f"Test output directory: {test_dir}")
+    log(f"Testing strengths: {strengths}")
