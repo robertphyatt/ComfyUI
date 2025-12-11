@@ -364,6 +364,18 @@ def build_ipadapter_generation_workflow(
         "_meta": {"title": "IPAdapter Advanced"}
     }
 
+    # Save reference images batch for debugging
+    save_refs_id = str(batch_node_id)
+    batch_node_id += 1
+    workflow[save_refs_id] = {
+        "inputs": {
+            "filename_prefix": "debug/reference_batch",
+            "images": [final_batch_node, 0]
+        },
+        "class_type": "SaveImage",
+        "_meta": {"title": "Save Reference Batch (Debug)"}
+    }
+
     workflow[controlnet_loader_id] = {
         "inputs": {"control_net_name": "control_v11p_sd15_openpose_fp16.safetensors"},
         "class_type": "ControlNetLoader",
@@ -380,6 +392,18 @@ def build_ipadapter_generation_workflow(
         },
         "class_type": "OpenposePreprocessor",
         "_meta": {"title": "OpenPose Preprocessor"}
+    }
+
+    # Save OpenPose skeleton output for debugging
+    save_openpose_id = str(batch_node_id)
+    batch_node_id += 1
+    workflow[save_openpose_id] = {
+        "inputs": {
+            "filename_prefix": "debug/openpose_skeleton",
+            "images": [openpose_id, 0]
+        },
+        "class_type": "SaveImage",
+        "_meta": {"title": "Save OpenPose Skeleton (Debug)"}
     }
 
     workflow[clip_positive_id] = {
@@ -452,6 +476,18 @@ def build_ipadapter_generation_workflow(
         },
         "class_type": "VAEDecode",
         "_meta": {"title": "VAE Decode"}
+    }
+
+    # Save base image for debugging
+    save_base_id = str(batch_node_id)
+    batch_node_id += 1
+    workflow[save_base_id] = {
+        "inputs": {
+            "filename_prefix": "debug/base_input",
+            "images": ["1", 0]
+        },
+        "class_type": "SaveImage",
+        "_meta": {"title": "Save Base Input (Debug)"}
     }
 
     workflow[save_image_id] = {
