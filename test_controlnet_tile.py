@@ -208,7 +208,7 @@ def build_tile_workflow(
 
     # ControlNet Tile Loader
     workflow[controlnet_loader_id] = {
-        "inputs": {"control_net_name": "control_v11f1e_sd15_tile.safetensors"},
+        "inputs": {"control_net_name": "control_v11f1e_sd15_tile.pth"},
         "class_type": "ControlNetLoader",
         "_meta": {"title": "Load ControlNet Tile"}
     }
