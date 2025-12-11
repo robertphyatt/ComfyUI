@@ -330,11 +330,142 @@ def build_tile_workflow(
     return workflow
 
 
+def run_tile_test(strength: float, test_dir: Path, client: ComfyUIClient):
+    """Run single test with given Tile strength."""
+    log(f"\n{'='*70}")
+    log(f"TESTING TILE STRENGTH: {strength}")
+    log(f"{'='*70}")
+
+    # Test parameters matching production
+    frame_idx = 4
+    base_name = f"base_frame_{frame_idx:02d}.png"
+    reference_names = [f"clothed_frame_{i:02d}.png" for i in range(25)]
+
+    prompt = "character wearing brown leather armor, pixel art"
+    negative_prompt = "blurry, low quality, distorted, deformed, multiple heads, extra limbs, modern clothing, smooth, rendered, 3d, photorealistic"
+    seed = 42 + frame_idx
+
+    output_dir = test_dir / f"frame_{frame_idx:02d}_strength_{strength}"
+
+    log(f"Base image: {base_name}")
+    log(f"Reference images: {len(reference_names)} frames")
+    log(f"Prompt: {prompt}")
+    log(f"Seed: {seed}")
+    log(f"Output directory: {output_dir}")
+
+    # Upload base frame
+    log("Uploading base frame...")
+    base_path = Path("training_data/frames") / base_name
+    if not base_path.exists():
+        log(f"ERROR: Base frame not found: {base_path}")
+        return False
+
+    base_uploaded_name = client.upload_image(base_path)
+    log(f"  Uploaded as: {base_uploaded_name}")
+
+    # Upload reference frames
+    log("Uploading reference frames...")
+    ref_uploaded_names = []
+    for ref_name in reference_names:
+        ref_path = Path("training_data/frames") / ref_name
+        if not ref_path.exists():
+            log(f"ERROR: Reference frame not found: {ref_path}")
+            return False
+        ref_uploaded_name = client.upload_image(ref_path)
+        ref_uploaded_names.append(ref_uploaded_name)
+    log(f"  Uploaded {len(ref_uploaded_names)} reference frames")
+
+    # Build workflow
+    log("Building Tile workflow...")
+    workflow = build_tile_workflow(
+        base_image_name=base_uploaded_name,
+        reference_image_names=ref_uploaded_names,
+        tile_strength=strength,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        seed=seed,
+        steps=35,
+        cfg=7.0,
+        denoise=1.0
+    )
+
+    # Save workflow JSON
+    workflow_path = output_dir / "workflow.json"
+    with open(workflow_path, 'w') as f:
+        json.dump(workflow, f, indent=2)
+    log(f"  Workflow saved: {workflow_path}")
+    log(f"  Total nodes: {len(workflow)}")
+
+    # Queue prompt
+    log("Submitting to ComfyUI...")
+    prompt_id = client.queue_prompt(workflow)
+    log(f"  Prompt ID: {prompt_id}")
+
+    # Wait for completion
+    log("Waiting for generation to complete...")
+    try:
+        history = client.wait_for_completion(prompt_id, timeout=300)
+        outputs = history.get("outputs", {})
+        log(f"  Execution completed with {len(outputs)} output nodes")
+
+        # Move artifacts to test directory
+        log("Moving artifacts to test directory...")
+        comfy_output = Path("output")
+
+        # Find all tile_test artifacts from this run
+        artifact_count = 0
+        for artifact_path in comfy_output.glob("tile_test/*"):
+            if artifact_path.is_file():
+                dest_path = output_dir / artifact_path.name
+                shutil.copy2(artifact_path, dest_path)
+                log(f"  Saved: {dest_path.name} ({dest_path.stat().st_size} bytes)")
+                artifact_count += 1
+
+        if artifact_count == 0:
+            log("  WARNING: No artifacts found in output/tile_test/")
+
+        log(f"✓ Test complete for strength {strength}")
+        return True
+
+    except Exception as e:
+        log(f"ERROR during generation: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 if __name__ == "__main__":
     log_file = setup_logging()
     log("ControlNet Tile Test Starting")
     log(f"Working directory: {os.getcwd()}")
 
+    # Initialize ComfyUI client
+    log("Initializing ComfyUI client...")
+    client = ComfyUIClient("http://127.0.0.1:8188")
+    if not client.health_check():
+        log("ERROR: ComfyUI server is not running at http://127.0.0.1:8188")
+        log("Please start ComfyUI and try again")
+        sys.exit(1)
+    log("  ComfyUI server is running")
+
     test_dir, strengths = setup_test_directories()
     log(f"Test output directory: {test_dir}")
     log(f"Testing strengths: {strengths}")
+
+    # Run tests
+    results = {}
+    for strength in strengths:
+        success = run_tile_test(strength, test_dir, client)
+        results[strength] = success
+
+    # Summary
+    log(f"\n{'='*70}")
+    log("TEST SUMMARY")
+    log(f"{'='*70}")
+    for strength, success in results.items():
+        status = "✓ PASS" if success else "✗ FAIL"
+        log(f"  Strength {strength}: {status}")
+
+    log(f"\nResults saved to: {test_dir}")
+    log(f"Log file: {log_file}")
+    log("\nControlNet Tile Test Complete")
