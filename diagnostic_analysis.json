@@ -1,0 +1,107 @@
+{
+  "0": {
+    "default": {
+      "path": "frame_00_openpose_default_00001_.png",
+      "size_bytes": 2362,
+      "dimensions": [
+        512,
+        512
+      ],
+      "non_black_pixels": 0,
+      "coverage_percent": 0.0,
+      "detected": false
+    },
+    "body_only": {
+      "path": "frame_00_openpose_body_only_00001_.png",
+      "size_bytes": 2362,
+      "dimensions": [
+        512,
+        512
+      ],
+      "non_black_pixels": 0,
+      "coverage_percent": 0.0,
+      "detected": false
+    },
+    "highres": {
+      "path": "frame_00_openpose_highres_00001_.png",
+      "size_bytes": 4649,
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "non_black_pixels": 0,
+      "coverage_percent": 0.0,
+      "detected": false
+    }
+  },
+  "4": {
+    "default": {
+      "path": "frame_04_openpose_default_00001_.png",
+      "size_bytes": 4200,
+      "dimensions": [
+        512,
+        512
+      ],
+      "non_black_pixels": 4249,
+      "coverage_percent": 1.6208648681640625,
+      "detected": true
+    },
+    "body_only": {
+      "path": "frame_04_openpose_body_only_00001_.png",
+      "size_bytes": 4200,
+      "dimensions": [
+        512,
+        512
+      ],
+      "non_black_pixels": 4249,
+      "coverage_percent": 1.6208648681640625,
+      "detected": true
+    },
+    "highres": {
+      "path": "frame_04_openpose_highres_00001_.png",
+      "size_bytes": 7554,
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "non_black_pixels": 8068,
+      "coverage_percent": 0.7694244384765625,
+      "detected": true
+    }
+  },
+  "12": {
+    "default": {
+      "path": "frame_12_openpose_default_00001_.png",
+      "size_bytes": 2362,
+      "dimensions": [
+        512,
+        512
+      ],
+      "non_black_pixels": 0,
+      "coverage_percent": 0.0,
+      "detected": false
+    },
+    "body_only": {
+      "path": "frame_12_openpose_body_only_00001_.png",
+      "size_bytes": 2362,
+      "dimensions": [
+        512,
+        512
+      ],
+      "non_black_pixels": 0,
+      "coverage_percent": 0.0,
+      "detected": false
+    },
+    "highres": {
+      "path": "frame_12_openpose_highres_00001_.png",
+      "size_bytes": 4649,
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "non_black_pixels": 0,
+      "coverage_percent": 0.0,
+      "detected": false
+    }
+  }
+}
