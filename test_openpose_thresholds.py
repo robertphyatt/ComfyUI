@@ -142,8 +142,9 @@ def test_frame_with_thresholds(client: ComfyUIClient, frame_idx: int, thre1: flo
         pixels = np.array(img)
         non_black = np.sum(np.any(pixels > 0, axis=2))
 
-        # Detection threshold: skeleton images are ~4KB+, have keypoints
-        success = file_size > 3000 and non_black > 100
+        # Detection threshold: valid skeleton has non-black pixels
+        # (file size check was wrong - valid skeletons can be <3KB)
+        success = non_black > 100
 
         return {
             "success": success,
