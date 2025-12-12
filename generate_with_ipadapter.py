@@ -70,14 +70,17 @@ def generate_clothed_frame(client: ComfyUIClient, frame_idx: int,
         print(f"  ✗ Generation failed: {e}")
         return False
 
-    # Get output image
+    # Get output image - filter for ipadapter_generated prefix (not debug outputs)
     outputs = history.get('outputs', {})
     for node_id, node_output in outputs.items():
         if 'images' in node_output:
-            # Download generated image
             for img_info in node_output['images']:
                 filename = img_info['filename']
                 subfolder = img_info.get('subfolder', '')
+
+                # Only process the main ipadapter_generated output, skip debug outputs
+                if not filename.startswith('ipadapter_generated'):
+                    continue
 
                 # Download the image
                 output_path = output_dir / f"clothed_frame_{frame_idx:02d}.png"
