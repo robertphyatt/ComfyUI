@@ -198,7 +198,73 @@ if __name__ == "__main__":
         sys.exit(1)
     log("  ComfyUI server is running")
 
-    # Test single frame to verify function works
-    log("\nTesting single frame (0) with default thresholds...")
-    result = test_frame_with_thresholds(client, 0, 0.1, 0.05, output_dir)
-    log(f"  Result: {result}")
+    # Run full grid test
+    log("\n" + "="*70)
+    log("STARTING GRID TEST")
+    log("="*70)
+
+    all_results = {}
+    total_tests = len(threshold_combinations) * 25
+    completed_tests = 0
+
+    start_time = time.time()
+
+    for thre1, thre2 in threshold_combinations:
+        log(f"\n{'='*70}")
+        log(f"Testing thre1={thre1:.2f}, thre2={thre2:.2f}")
+        log(f"{'='*70}")
+
+        threshold_key = f"thre1_{thre1:.2f}_thre2_{thre2:.2f}"
+        all_results[threshold_key] = {
+            "threshold_1": thre1,
+            "threshold_2": thre2,
+            "frames": {}
+        }
+
+        success_count = 0
+
+        for frame_idx in range(25):
+            result = test_frame_with_thresholds(client, frame_idx, thre1, thre2, output_dir)
+            all_results[threshold_key]["frames"][frame_idx] = result
+
+            if result["success"]:
+                success_count += 1
+
+            completed_tests += 1
+
+            # Progress indicator
+            if frame_idx % 5 == 0:
+                elapsed = time.time() - start_time
+                est_total = (elapsed / completed_tests) * total_tests
+                est_remaining = est_total - elapsed
+                log(f"  Frame {frame_idx:02d}: {'✓' if result['success'] else '✗'} "
+                    f"({completed_tests}/{total_tests}, "
+                    f"~{est_remaining/60:.1f}min remaining)")
+
+            # Small delay to avoid overwhelming ComfyUI
+            time.sleep(0.3)
+
+        all_results[threshold_key]["success_count"] = success_count
+        log(f"  Threshold result: {success_count}/25 frames detected")
+
+    # Save results
+    results_file = Path("threshold_test_results.json")
+    with open(results_file, 'w') as f:
+        json.dump({
+            "timestamp": datetime.now().isoformat(),
+            "total_tests": total_tests,
+            "threshold_combinations": len(threshold_combinations),
+            "results": all_results
+        }, f, indent=2)
+
+    log(f"\n{'='*70}")
+    log("GRID TEST COMPLETE")
+    log(f"{'='*70}")
+    log(f"Total tests: {total_tests}")
+    log(f"Results saved to: {results_file}")
+    log(f"Output images in: {output_dir}")
+
+    # Quick summary
+    log("\nQuick Summary:")
+    for threshold_key, data in all_results.items():
+        log(f"  {threshold_key}: {data['success_count']}/25 frames")
