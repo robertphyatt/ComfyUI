@@ -144,7 +144,7 @@ def test_frame_with_thresholds(client: ComfyUIClient, frame_idx: int, thre1: flo
 
         # Detection threshold: valid skeleton has non-black pixels
         # (file size check was wrong - valid skeletons can be <3KB)
-        success = non_black > 100
+        success = bool(non_black > 100)
 
         return {
             "success": success,
