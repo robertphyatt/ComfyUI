@@ -135,7 +135,10 @@ def build_openpose_preprocessing_workflow(
     input_image_filename: str,
     output_filename_prefix: str = "pose"
 ) -> Dict[str, Any]:
-    """Build ComfyUI workflow for OpenPose preprocessing.
+    """Build ComfyUI workflow for pose preprocessing using DWPose.
+
+    Uses DWPose with bbox_detector=None for reliable pixel art pose detection.
+    This bypasses YOLOX person detection which fails on pixel art sprites.
 
     Args:
         input_image_filename: Filename of input image (in ComfyUI input dir)
@@ -152,12 +155,14 @@ def build_openpose_preprocessing_workflow(
             }
         },
         "2": {
-            "class_type": "OpenposePreprocessor",
+            "class_type": "DWPreprocessor",
             "inputs": {
                 "detect_hand": "enable",
                 "detect_body": "enable",
-                "detect_face": "disable",
+                "detect_face": "enable",
                 "resolution": 512,
+                "bbox_detector": "None",  # Skip YOLOX - process full image for pixel art
+                "pose_estimator": "dw-ll_ucoco_384.onnx",
                 "image": ["1", 0]
             }
         },
@@ -340,6 +345,14 @@ def build_ipadapter_generation_workflow(
     vae_decode_id = str(batch_node_id)
     batch_node_id += 1
     save_image_id = str(batch_node_id)
+    batch_node_id += 1
+    # Debug SaveImage node IDs
+    save_refs_id = str(batch_node_id)
+    batch_node_id += 1
+    save_openpose_id = str(batch_node_id)
+    batch_node_id += 1
+    save_base_id = str(batch_node_id)
+    batch_node_id += 1
 
     # Continue building the rest of the workflow with dynamic node IDs
     workflow[checkpoint_node_id] = {
@@ -365,8 +378,6 @@ def build_ipadapter_generation_workflow(
     }
 
     # Save reference images batch for debugging
-    save_refs_id = str(batch_node_id)
-    batch_node_id += 1
     workflow[save_refs_id] = {
         "inputs": {
             "filename_prefix": "debug/reference_batch",
@@ -388,15 +399,15 @@ def build_ipadapter_generation_workflow(
             "detect_body": "enable",
             "detect_face": "enable",
             "resolution": 512,
+            "bbox_detector": "None",  # Skip YOLOX - process full image for pixel art
+            "pose_estimator": "dw-ll_ucoco_384.onnx",
             "image": ["1", 0]  # Base image
         },
-        "class_type": "OpenposePreprocessor",
-        "_meta": {"title": "OpenPose Preprocessor"}
+        "class_type": "DWPreprocessor",  # DWPose instead of OpenPose for better pixel art detection
+        "_meta": {"title": "DWPose Preprocessor"}
     }
 
     # Save OpenPose skeleton output for debugging
-    save_openpose_id = str(batch_node_id)
-    batch_node_id += 1
     workflow[save_openpose_id] = {
         "inputs": {
             "filename_prefix": "debug/openpose_skeleton",
@@ -479,8 +490,6 @@ def build_ipadapter_generation_workflow(
     }
 
     # Save base image for debugging
-    save_base_id = str(batch_node_id)
-    batch_node_id += 1
     workflow[save_base_id] = {
         "inputs": {
             "filename_prefix": "debug/base_input",
