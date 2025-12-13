@@ -139,13 +139,45 @@ But it does NOT capture:
 
 **None of these configurations produced armor that matches the reference.**
 
-## Next Steps to Investigate
+## Additional Tests Performed (Dec 13, 2025 - Continued)
 
-Based on Gemini research and the nature of the problem:
+### Test #15: IPAdapterAdvanced with Attention Masking
+**Result: FAILED**
+- Created proper body masks (white silhouette on black background)
+- Used `attn_mask` parameter to restrict IPAdapter to body region
+- Settings: weight_type="style transfer precise", combine_embeds="norm average", embeds_scaling="K+V"
+- Output: Still generic gray/silver/blue armor, not matching reference
 
-1. **ControlNet Reference-Only Mode** - Uses reference image as structural guide
-2. **Inpainting Approach** - Generate only on masked body region
-3. **Different IPAdapter Models** - Try IP-Adapter-FaceID or other variants
-4. **Multi-reference Batching** - Feed multiple reference frames
-5. **ControlNet Tile** - May preserve local texture better (previously attempted, failed)
-6. **Lower-level approach** - Direct pixel manipulation/compositing instead of generation
+### Test #16: Inpainting Approach
+**Result: FAILED**
+- Started from clothed reference, masked body region
+- Inpainting REPLACED the armor instead of preserving it
+- Output: Generic gray/blue shapes, completely lost armor texture
+
+### Test #17: ControlNet Tile (Reference-Only)
+**Result: PARTIAL - Best of the new tests**
+- Used ControlNet Tile with clothed reference as texture guide
+- Started from mannequin latent, guided by reference texture
+- Output: Some brown coloring came through, orientation preserved
+- Still doesn't match exact armor design/texture
+
+### Test #18: Tile + Inpainting Combined
+**Result: FAILED - Worst result**
+- Combined both approaches
+- Output: Nearly featureless gray silhouettes
+- Low denoise + inpainting stripped all texture
+
+## Conclusions
+
+**None of the AI-based approaches can replicate the exact armor design from the reference.**
+
+The fundamental issue: All these techniques (IPAdapter, ControlNet, Inpainting) are **generative** - they create NEW content influenced by references, not copy existing content. They cannot:
+- Match exact pixel colors
+- Replicate specific armor patterns/designs
+- Preserve precise texture details
+
+**What might work:**
+1. **Much lower denoise with Tile** (try 0.2-0.3) to preserve more of reference
+2. **Direct image compositing** with pose-aware warping (non-AI)
+3. **Train a LoRA** on the specific armor to teach the model the exact design
+4. **Completely different approach** - generate base poses, manually paint armor
