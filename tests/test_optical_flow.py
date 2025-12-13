@@ -95,3 +95,26 @@ class TestMasking:
         assert mask.shape == (50, 50)
         assert mask[25, 25] == 255  # Body region
         assert mask[0, 0] == 0      # Background
+
+    def test_blend_with_background_uses_mask(self):
+        """Blend should use warped where mask=255, background where mask=0."""
+        from sprite_clothing_gen.optical_flow import blend_with_background
+
+        # Warped image: all red
+        warped = np.zeros((50, 50, 3), dtype=np.uint8)
+        warped[:, :] = [0, 0, 255]  # Red in BGR
+
+        # Background: all blue
+        background = np.zeros((50, 50, 3), dtype=np.uint8)
+        background[:, :] = [255, 0, 0]  # Blue in BGR
+
+        # Mask: center square is body
+        mask = np.zeros((50, 50), dtype=np.uint8)
+        mask[20:30, 20:30] = 255
+
+        result = blend_with_background(warped, background, mask)
+
+        # Center should be red (from warped)
+        assert result[25, 25, 2] > 200  # Red channel high
+        # Edge should be blue (from background)
+        assert result[0, 0, 0] > 200    # Blue channel high

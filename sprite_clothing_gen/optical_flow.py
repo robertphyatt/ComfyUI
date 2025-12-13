@@ -93,3 +93,34 @@ def create_body_mask(image: np.ndarray, threshold: int = 245) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     mask = (gray < threshold).astype(np.uint8) * 255
     return mask
+
+
+def blend_with_background(
+    warped: np.ndarray,
+    background: np.ndarray,
+    mask: np.ndarray,
+    dilate_iterations: int = 1
+) -> np.ndarray:
+    """Blend warped armor onto background using mask.
+
+    Args:
+        warped: Warped clothed image
+        background: Background image (white or mannequin)
+        mask: Body mask
+        dilate_iterations: How much to dilate mask for edge cleanup
+
+    Returns:
+        Blended result
+    """
+    # Dilate mask to avoid edge artifacts
+    kernel = np.ones((3, 3), np.uint8)
+    mask_dilated = cv2.dilate(mask, kernel, iterations=dilate_iterations)
+
+    # Normalize mask to 0-1 range
+    mask_norm = mask_dilated.astype(np.float32) / 255.0
+    mask_3ch = np.stack([mask_norm] * 3, axis=-1)
+
+    # Blend: warped where mask=1, background where mask=0
+    result = (warped * mask_3ch + background * (1 - mask_3ch)).astype(np.uint8)
+
+    return result
