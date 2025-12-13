@@ -78,3 +78,18 @@ def warp_image(source: np.ndarray, flow: np.ndarray) -> np.ndarray:
     )
 
     return warped
+
+
+def create_body_mask(image: np.ndarray, threshold: int = 245) -> np.ndarray:
+    """Create binary mask where body pixels are (non-white background).
+
+    Args:
+        image: BGR image
+        threshold: Grayscale value above which is considered background
+
+    Returns:
+        Binary mask (255 = body, 0 = background)
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    mask = (gray < threshold).astype(np.uint8) * 255
+    return mask

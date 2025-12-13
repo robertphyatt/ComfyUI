@@ -79,3 +79,19 @@ class TestOpticalFlow:
         # After +5 shift, it should be at x=25:35
         # Check center of shifted region has white pixels
         assert warped[25, 30, 0] > 200  # Should be white-ish
+
+
+class TestMasking:
+    def test_create_body_mask_detects_non_white(self):
+        """Body mask should be 255 where non-white, 0 where white."""
+        from sprite_clothing_gen.optical_flow import create_body_mask
+
+        # Create image with white background and gray body
+        img = np.ones((50, 50, 3), dtype=np.uint8) * 255  # All white
+        img[20:30, 20:30] = [100, 100, 100]  # Gray square (body)
+
+        mask = create_body_mask(img)
+
+        assert mask.shape == (50, 50)
+        assert mask[25, 25] == 255  # Body region
+        assert mask[0, 0] == 0      # Background
