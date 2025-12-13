@@ -202,15 +202,6 @@ def build_ipadapter_generation_workflow(
     Returns:
         ComfyUI workflow dict
     """
-    # Calculate checkpoint node ID first (needed by IPAdapterUnifiedLoader at node 3)
-    # We need 25 LoadImage nodes (4-28) + up to 24 ImageBatch nodes
-    # Checkpoint will be after all batching
-    # Reserve nodes 4-28 for reference loaders, 29+ for batching
-    num_references = len(reference_image_names)
-    # Binary tree has n-1 internal nodes for n leaves
-    max_batch_nodes = num_references - 1
-    checkpoint_node_id = str(29 + max_batch_nodes)  # After all batch nodes
-
     workflow = {
         # 1. Load base image
         "1": {
@@ -223,17 +214,10 @@ def build_ipadapter_generation_workflow(
             "inputs": {"image": mask_image_name},
             "class_type": "LoadImage"
         },
-
-        # 3. Load IPAdapter with Unified Loader (loads both IPAdapter + CLIPVision)
-        "3": {
-            "inputs": {
-                "model": [checkpoint_node_id, 0],  # Model from checkpoint
-                "preset": "PLUS (high strength)"    # SD1.5 high-strength preset
-            },
-            "class_type": "IPAdapterUnifiedLoader",
-            "_meta": {"title": "IPAdapter Unified Loader"}
-        },
+        # Node 3 (IPAdapterUnifiedLoader) is added later after checkpoint_node_id is calculated
     }
+
+    num_references = len(reference_image_names)
 
     # 4-28: Load 25 reference images individually (clothed frames)
     # NOTE: Using Approach B from plan - LoadImageBatch doesn't support explicit filename lists
@@ -348,6 +332,17 @@ def build_ipadapter_generation_workflow(
         "inputs": {"ckpt_name": "v1-5-pruned-emaonly.safetensors"},
         "class_type": "CheckpointLoaderSimple",
         "_meta": {"title": "Load Checkpoint"}
+    }
+
+    # Node 3: IPAdapterUnifiedLoader (loads both IPAdapter + CLIPVision)
+    # Must be added here after checkpoint_node_id is calculated
+    workflow["3"] = {
+        "inputs": {
+            "model": [checkpoint_node_id, 0],  # Model from checkpoint
+            "preset": "PLUS (high strength)"    # SD1.5 high-strength preset
+        },
+        "class_type": "IPAdapterUnifiedLoader",
+        "_meta": {"title": "IPAdapter Unified Loader"}
     }
 
     workflow[ipadapter_apply_id] = {
