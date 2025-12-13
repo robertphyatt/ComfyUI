@@ -12,11 +12,14 @@ Runs complete workflow:
 8. Stop ComfyUI server
 
 Usage:
-    python process_clothing_spritesheet.py
+    python process_clothing_spritesheet.py           # Clean start (default)
+    python process_clothing_spritesheet.py --resume  # Keep existing artifacts
 """
 
 import sys
 import subprocess
+import argparse
+import shutil
 import time
 import signal
 import atexit
@@ -95,7 +98,49 @@ def stop_comfyui_server():
 atexit.register(stop_comfyui_server)
 
 
+def clean_artifacts():
+    """Remove all pipeline artifacts for a fresh start."""
+    print("Cleaning previous artifacts...")
+
+    artifacts = [
+        Path("training_data/frames_ipadapter_generated"),
+        Path("output/debug"),
+    ]
+
+    # Remove directories
+    for path in artifacts:
+        if path.exists():
+            shutil.rmtree(path)
+            print(f"  Removed {path}")
+
+    # Remove ipadapter output files
+    output_dir = Path("output")
+    if output_dir.exists():
+        for f in output_dir.glob("ipadapter_generated_*.png"):
+            f.unlink()
+            print(f"  Removed {f}")
+
+    print("  ✓ Artifacts cleaned")
+    print()
+
+
 def main():
+    """Run complete clothing spritesheet generation pipeline."""
+    parser = argparse.ArgumentParser(description="Clothing spritesheet generation pipeline")
+    parser.add_argument("--resume", action="store_true",
+                        help="Keep existing artifacts instead of cleaning")
+    args = parser.parse_args()
+
+    if not args.resume:
+        clean_artifacts()
+    else:
+        print("Resuming with existing artifacts...")
+        print()
+
+    return run_pipeline()
+
+
+def run_pipeline():
     """Run complete clothing spritesheet generation pipeline."""
     print("=" * 70)
     print("CLOTHING SPRITESHEET GENERATION PIPELINE")
