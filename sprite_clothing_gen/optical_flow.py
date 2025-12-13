@@ -4,6 +4,8 @@ import cv2
 import numpy as np
 from PIL import Image
 from pathlib import Path
+import shutil
+from typing import Optional, Tuple
 
 
 def load_image_bgr(path: Path) -> np.ndarray:
@@ -124,3 +126,96 @@ def blend_with_background(
     result = (warped * mask_3ch + background * (1 - mask_3ch)).astype(np.uint8)
 
     return result
+
+
+def images_already_aligned(
+    clothed: np.ndarray,
+    mannequin: np.ndarray,
+    threshold: float = 0.98
+) -> bool:
+    """Check if clothed and mannequin images are already aligned.
+
+    Compares body silhouettes to determine if poses match.
+    If they match, no warping is needed.
+
+    Args:
+        clothed: BGR clothed image
+        mannequin: BGR mannequin image
+        threshold: Similarity threshold (0-1), higher = stricter
+
+    Returns:
+        True if images are already aligned (no warp needed)
+    """
+    # Create masks for both images
+    clothed_mask = create_body_mask(clothed)
+    mannequin_mask = create_body_mask(mannequin)
+
+    # Calculate intersection over union (IoU) of masks
+    intersection = np.logical_and(clothed_mask > 0, mannequin_mask > 0).sum()
+    union = np.logical_or(clothed_mask > 0, mannequin_mask > 0).sum()
+
+    if union == 0:
+        return True  # Both empty = aligned
+
+    iou = intersection / union
+    return iou >= threshold
+
+
+def warp_clothing_to_pose(
+    clothed_path: Path,
+    mannequin_path: Path,
+    output_path: Path,
+    debug_dir: Optional[Path] = None,
+    alignment_threshold: float = 0.98
+) -> Tuple[Path, bool]:
+    """Warp clothed reference to match mannequin pose.
+
+    Main entry point for clothing transfer. If images are already
+    aligned (poses match), copies the clothed image directly without
+    warping to preserve maximum quality.
+
+    Args:
+        clothed_path: Path to clothed reference frame
+        mannequin_path: Path to base mannequin frame (target pose)
+        output_path: Where to save result
+        debug_dir: Optional directory for debug outputs
+        alignment_threshold: IoU threshold for skip-warp optimization
+
+    Returns:
+        Tuple of (output_path, was_skipped) where was_skipped is True
+        if the image was already aligned and copied without warping
+    """
+    # Load images
+    clothed = load_image_bgr(clothed_path)
+    mannequin = load_image_bgr(mannequin_path)
+
+    # Check if already aligned - skip warp if so
+    if images_already_aligned(clothed, mannequin, alignment_threshold):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(clothed_path, output_path)
+        return output_path, True  # Skipped warping
+
+    # Compute flow: how pixels move from clothed to mannequin
+    flow = compute_optical_flow(clothed, mannequin)
+
+    # Warp clothed image to match mannequin pose
+    warped = warp_image(clothed, flow)
+
+    # Create mask from mannequin (where body pixels are)
+    mask = create_body_mask(mannequin)
+
+    # Blend with clean white background
+    white_bg = np.ones_like(mannequin) * 255
+    result = blend_with_background(warped, white_bg, mask)
+
+    # Save result
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    save_image_bgr(result, output_path)
+
+    # Save debug outputs if requested
+    if debug_dir:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        save_image_bgr(warped, debug_dir / f"warped_{output_path.stem}.png")
+        cv2.imwrite(str(debug_dir / f"mask_{output_path.stem}.png"), mask)
+
+    return output_path, False  # Did warp

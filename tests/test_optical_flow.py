@@ -118,3 +118,66 @@ class TestMasking:
         assert result[25, 25, 2] > 200  # Red channel high
         # Edge should be blue (from background)
         assert result[0, 0, 0] > 200    # Blue channel high
+
+
+class TestWarpClothingToPose:
+    def test_warp_clothing_to_pose_creates_output(self, tmp_path):
+        """Main function should create output file when poses differ."""
+        from sprite_clothing_gen.optical_flow import warp_clothing_to_pose
+
+        # Create simple clothed image (gray body on white)
+        clothed = Image.new('RGB', (50, 50), color=(255, 255, 255))
+        for x in range(20, 30):
+            for y in range(20, 30):
+                clothed.putpixel((x, y), (100, 80, 60))  # Brown-ish
+        clothed_path = tmp_path / "clothed.png"
+        clothed.save(clothed_path)
+
+        # Create mannequin image (DIFFERENT pose - shifted)
+        mannequin = Image.new('RGB', (50, 50), color=(255, 255, 255))
+        for x in range(25, 35):  # Shifted +5 pixels
+            for y in range(25, 35):
+                mannequin.putpixel((x, y), (128, 128, 128))  # Gray
+        mannequin_path = tmp_path / "mannequin.png"
+        mannequin.save(mannequin_path)
+
+        output_path = tmp_path / "output.png"
+
+        result_path, was_skipped = warp_clothing_to_pose(clothed_path, mannequin_path, output_path)
+
+        assert result_path == output_path
+        assert output_path.exists()
+        assert was_skipped == False  # Should have warped
+
+    def test_warp_clothing_to_pose_skips_when_aligned(self, tmp_path):
+        """Should skip warping and copy directly when poses already match."""
+        from sprite_clothing_gen.optical_flow import warp_clothing_to_pose
+
+        # Create clothed and mannequin with SAME pose
+        clothed = Image.new('RGB', (50, 50), color=(255, 255, 255))
+        for x in range(20, 30):
+            for y in range(20, 30):
+                clothed.putpixel((x, y), (100, 80, 60))  # Brown armor
+        clothed_path = tmp_path / "clothed.png"
+        clothed.save(clothed_path)
+
+        # Mannequin at SAME position
+        mannequin = Image.new('RGB', (50, 50), color=(255, 255, 255))
+        for x in range(20, 30):  # Same position as clothed
+            for y in range(20, 30):
+                mannequin.putpixel((x, y), (128, 128, 128))  # Gray
+        mannequin_path = tmp_path / "mannequin.png"
+        mannequin.save(mannequin_path)
+
+        output_path = tmp_path / "output.png"
+
+        result_path, was_skipped = warp_clothing_to_pose(clothed_path, mannequin_path, output_path)
+
+        assert result_path == output_path
+        assert output_path.exists()
+        assert was_skipped == True  # Should have skipped warping
+
+        # Verify output is identical to clothed (direct copy)
+        output_img = Image.open(output_path)
+        clothed_img = Image.open(clothed_path)
+        assert list(output_img.getdata()) == list(clothed_img.getdata())
