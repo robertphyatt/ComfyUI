@@ -135,10 +135,7 @@ def build_openpose_preprocessing_workflow(
     input_image_filename: str,
     output_filename_prefix: str = "pose"
 ) -> Dict[str, Any]:
-    """Build ComfyUI workflow for pose preprocessing using DWPose.
-
-    Uses DWPose with bbox_detector=None for reliable pixel art pose detection.
-    This bypasses YOLOX person detection which fails on pixel art sprites.
+    """Build ComfyUI workflow for OpenPose preprocessing.
 
     Args:
         input_image_filename: Filename of input image (in ComfyUI input dir)
@@ -161,7 +158,7 @@ def build_openpose_preprocessing_workflow(
                 "detect_body": "enable",
                 "detect_face": "enable",
                 "resolution": 512,
-                "bbox_detector": "None",  # Skip YOLOX - process full image for pixel art
+                "bbox_detector": "None",  # Skip YOLOX for pixel art
                 "pose_estimator": "dw-ll_ucoco_384.onnx",
                 "image": ["1", 0]
             }
@@ -205,16 +202,6 @@ def build_ipadapter_generation_workflow(
     Returns:
         ComfyUI workflow dict
     """
-    # Calculate checkpoint node ID FIRST (needed by IPAdapterUnifiedLoader at node 3)
-    # We need 25 LoadImage nodes (4-28) + up to 24 ImageBatch nodes
-    # Checkpoint will be after all batching
-    # Reserve nodes 4-28 for reference loaders, 29+ for batching
-    # Calculate checkpoint_node_id based on batching tree depth
-    num_references = len(reference_image_names)
-    # Binary tree has n-1 internal nodes for n leaves
-    max_batch_nodes = num_references - 1
-    checkpoint_node_id = str(29 + max_batch_nodes)  # After all batch nodes
-
     workflow = {
         # 1. Load base image
         "1": {
@@ -229,6 +216,8 @@ def build_ipadapter_generation_workflow(
         },
 
         # 3. Load IPAdapter with Unified Loader (loads both IPAdapter + CLIPVision)
+        # Note: References checkpoint_node_id which is calculated later
+        # ComfyUI handles execution order via dataflow, not node ID order
         "3": {
             "inputs": {
                 "model": [checkpoint_node_id, 0],  # Model from checkpoint
@@ -243,6 +232,16 @@ def build_ipadapter_generation_workflow(
     # NOTE: Using Approach B from plan - LoadImageBatch doesn't support explicit filename lists
     # Instead, we create individual LoadImage nodes and batch them with ImageBatch
     # This properly uses the reference_image_names parameter instead of ignoring it
+
+    # Calculate checkpoint node ID first (needed by IPAdapterUnifiedLoader at node 3)
+    # We need 25 LoadImage nodes (4-28) + up to 24 ImageBatch nodes
+    # Checkpoint will be after all batching
+    # Reserve nodes 4-28 for reference loaders, 29+ for batching
+    # Calculate checkpoint_node_id based on batching tree depth
+    num_references = len(reference_image_names)
+    # Binary tree has n-1 internal nodes for n leaves
+    max_batch_nodes = num_references - 1
+    checkpoint_node_id = str(29 + max_batch_nodes)  # After all batch nodes
 
     # Start with node ID 4, allocate enough IDs for loaders and batchers
     # We need 25 LoadImage nodes + 24 ImageBatch nodes = 49 nodes total
@@ -337,22 +336,15 @@ def build_ipadapter_generation_workflow(
     batch_node_id += 1
     controlnet_apply_id = str(batch_node_id)
     batch_node_id += 1
-    vae_encode_id = str(batch_node_id)  # Will be renamed to empty_latent_id below
+    vae_encode_id = str(batch_node_id)
     batch_node_id += 1
-    # set_mask_id removed - no longer using SetLatentNoiseMask (txt2img instead of img2img)
+    set_mask_id = str(batch_node_id)
+    batch_node_id += 1
     ksampler_id = str(batch_node_id)
     batch_node_id += 1
     vae_decode_id = str(batch_node_id)
     batch_node_id += 1
     save_image_id = str(batch_node_id)
-    batch_node_id += 1
-    # Debug SaveImage node IDs
-    save_refs_id = str(batch_node_id)
-    batch_node_id += 1
-    save_openpose_id = str(batch_node_id)
-    batch_node_id += 1
-    save_base_id = str(batch_node_id)
-    batch_node_id += 1
 
     # Continue building the rest of the workflow with dynamic node IDs
     workflow[checkpoint_node_id] = {
@@ -363,28 +355,16 @@ def build_ipadapter_generation_workflow(
 
     workflow[ipadapter_apply_id] = {
         "inputs": {
-            "weight": 1.0,  # Match working test configuration
-            "weight_type": "style and composition",  # Transfer both clothing style and structure
-            "combine_embeds": "concat",  # Combine multiple reference images
+            "weight": 0.8,
+            "weight_type": "style transfer",  # Fixed: use valid IPAdapter weight_type
             "start_at": 0.0,
             "end_at": 1.0,
-            "embeds_scaling": "V only",  # Standard scaling
             "ipadapter": ["3", 1],  # IPAdapter dict from IPAdapterUnifiedLoader output [1]
             "image": [final_batch_node, 0],  # Reference images from final batch
             "model": ["3", 0]  # Model from IPAdapterUnifiedLoader output [0]
         },
-        "class_type": "IPAdapterAdvanced",  # Use Advanced node for full weight_type options
-        "_meta": {"title": "IPAdapter Advanced"}
-    }
-
-    # Save reference images batch for debugging
-    workflow[save_refs_id] = {
-        "inputs": {
-            "filename_prefix": "debug/reference_batch",
-            "images": [final_batch_node, 0]
-        },
-        "class_type": "SaveImage",
-        "_meta": {"title": "Save Reference Batch (Debug)"}
+        "class_type": "IPAdapter",  # Fixed: use correct node name
+        "_meta": {"title": "IPAdapter"}
     }
 
     workflow[controlnet_loader_id] = {
@@ -403,18 +383,8 @@ def build_ipadapter_generation_workflow(
             "pose_estimator": "dw-ll_ucoco_384.onnx",
             "image": ["1", 0]  # Base image
         },
-        "class_type": "DWPreprocessor",  # DWPose instead of OpenPose for better pixel art detection
+        "class_type": "DWPreprocessor",
         "_meta": {"title": "DWPose Preprocessor"}
-    }
-
-    # Save OpenPose skeleton output for debugging
-    workflow[save_openpose_id] = {
-        "inputs": {
-            "filename_prefix": "debug/openpose_skeleton",
-            "images": [openpose_id, 0]
-        },
-        "class_type": "SaveImage",
-        "_meta": {"title": "Save OpenPose Skeleton (Debug)"}
     }
 
     workflow[clip_positive_id] = {
@@ -449,19 +419,23 @@ def build_ipadapter_generation_workflow(
         "_meta": {"title": "Apply ControlNet"}
     }
 
-    empty_latent_id = vae_encode_id  # Reuse variable name for cleaner refactor
-    workflow[empty_latent_id] = {
+    workflow[vae_encode_id] = {
         "inputs": {
-            "width": 512,
-            "height": 512,
-            "batch_size": 1
+            "pixels": ["1", 0],
+            "vae": [checkpoint_node_id, 2]
         },
-        "class_type": "EmptyLatentImage",
-        "_meta": {"title": "Empty Latent Image"}
+        "class_type": "VAEEncode",
+        "_meta": {"title": "VAE Encode"}
     }
 
-    # Note: SetLatentNoiseMask removed - using txt2img (denoise=1.0) instead of img2img
-    # KSampler will use EmptyLatentImage directly
+    workflow[set_mask_id] = {
+        "inputs": {
+            "samples": [vae_encode_id, 0],
+            "mask": ["2", 1]  # Mask image (alpha channel)
+        },
+        "class_type": "SetLatentNoiseMask",
+        "_meta": {"title": "Set Latent Noise Mask"}
+    }
 
     workflow[ksampler_id] = {
         "inputs": {
@@ -474,10 +448,10 @@ def build_ipadapter_generation_workflow(
             "model": [ipadapter_apply_id, 0],
             "positive": [controlnet_apply_id, 0],
             "negative": [controlnet_apply_id, 1],
-            "latent_image": [empty_latent_id, 0]  # Changed from set_mask_id to empty_latent_id
+            "latent_image": [set_mask_id, 0]
         },
         "class_type": "KSampler",
-        "_meta": {"title": "KSampler (txt2img with denoise=1.0)"}
+        "_meta": {"title": "KSampler (Inpainting)"}
     }
 
     workflow[vae_decode_id] = {
@@ -487,16 +461,6 @@ def build_ipadapter_generation_workflow(
         },
         "class_type": "VAEDecode",
         "_meta": {"title": "VAE Decode"}
-    }
-
-    # Save base image for debugging
-    workflow[save_base_id] = {
-        "inputs": {
-            "filename_prefix": "debug/base_input",
-            "images": ["1", 0]
-        },
-        "class_type": "SaveImage",
-        "_meta": {"title": "Save Base Input (Debug)"}
     }
 
     workflow[save_image_id] = {
