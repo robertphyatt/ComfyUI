@@ -317,10 +317,9 @@ def build_ipadapter_generation_workflow(
     batch_node_id += 1
     controlnet_apply_id = str(batch_node_id)
     batch_node_id += 1
-    vae_encode_id = str(batch_node_id)
+    empty_latent_id = str(batch_node_id)  # txt2img mode - generate from empty latent
     batch_node_id += 1
-    set_mask_id = str(batch_node_id)
-    batch_node_id += 1
+    # set_mask_id removed - using txt2img instead of img2img inpainting
     ksampler_id = str(batch_node_id)
     batch_node_id += 1
     vae_decode_id = str(batch_node_id)
@@ -347,16 +346,18 @@ def build_ipadapter_generation_workflow(
 
     workflow[ipadapter_apply_id] = {
         "inputs": {
-            "weight": 0.8,
-            "weight_type": "style transfer",  # Fixed: use valid IPAdapter weight_type
+            "weight": 1.0,  # Full strength for clothing transfer
+            "weight_type": "style and composition",  # Transfer both clothing style AND structure
+            "combine_embeds": "concat",  # Properly combine multiple reference images
             "start_at": 0.0,
             "end_at": 1.0,
+            "embeds_scaling": "V only",  # Standard scaling for batched images
             "ipadapter": ["3", 1],  # IPAdapter dict from IPAdapterUnifiedLoader output [1]
             "image": [final_batch_node, 0],  # Reference images from final batch
             "model": ["3", 0]  # Model from IPAdapterUnifiedLoader output [0]
         },
-        "class_type": "IPAdapter",  # Fixed: use correct node name
-        "_meta": {"title": "IPAdapter"}
+        "class_type": "IPAdapterAdvanced",  # Advanced node for multi-image style transfer
+        "_meta": {"title": "IPAdapter Advanced"}
     }
 
     workflow[controlnet_loader_id] = {
@@ -411,23 +412,18 @@ def build_ipadapter_generation_workflow(
         "_meta": {"title": "Apply ControlNet"}
     }
 
-    workflow[vae_encode_id] = {
+    # txt2img mode: generate from empty latent guided by pose, not inpainting
+    workflow[empty_latent_id] = {
         "inputs": {
-            "pixels": ["1", 0],
-            "vae": [checkpoint_node_id, 2]
+            "width": 512,
+            "height": 512,
+            "batch_size": 1
         },
-        "class_type": "VAEEncode",
-        "_meta": {"title": "VAE Encode"}
+        "class_type": "EmptyLatentImage",
+        "_meta": {"title": "Empty Latent Image"}
     }
 
-    workflow[set_mask_id] = {
-        "inputs": {
-            "samples": [vae_encode_id, 0],
-            "mask": ["2", 1]  # Mask image (alpha channel)
-        },
-        "class_type": "SetLatentNoiseMask",
-        "_meta": {"title": "Set Latent Noise Mask"}
-    }
+    # Note: SetLatentNoiseMask removed - using txt2img (denoise=1.0) instead of img2img
 
     workflow[ksampler_id] = {
         "inputs": {
@@ -440,10 +436,10 @@ def build_ipadapter_generation_workflow(
             "model": [ipadapter_apply_id, 0],
             "positive": [controlnet_apply_id, 0],
             "negative": [controlnet_apply_id, 1],
-            "latent_image": [set_mask_id, 0]
+            "latent_image": [empty_latent_id, 0]  # Generate from scratch, not inpaint
         },
         "class_type": "KSampler",
-        "_meta": {"title": "KSampler (Inpainting)"}
+        "_meta": {"title": "KSampler (txt2img)"}
     }
 
     workflow[vae_decode_id] = {
