@@ -181,3 +181,49 @@ The fundamental issue: All these techniques (IPAdapter, ControlNet, Inpainting) 
 2. **Direct image compositing** with pose-aware warping (non-AI)
 3. **Train a LoRA** on the specific armor to teach the model the exact design
 4. **Completely different approach** - generate base poses, manually paint armor
+
+---
+
+## BREAKTHROUGH: Optical Flow Warping (Test #22)
+
+### The Winning Approach
+
+Instead of AI generation, use **optical flow** to warp the clothed reference to match the mannequin pose:
+
+```python
+# Compute how pixels move from clothed -> mannequin
+flow = cv2.calcOpticalFlowFarneback(clothed_gray, mannequin_gray, ...)
+
+# Warp clothed image using flow field
+warped = cv2.remap(clothed, map_x + flow_x, map_y + flow_y, ...)
+```
+
+### Why This Works
+
+1. **No regeneration** - We're moving existing pixels, not generating new ones
+2. **Exact armor preservation** - Same texture, same colors, same design
+3. **Fast** - Runs in seconds on CPU, no GPU needed
+4. **Deterministic** - Same input = same output every time
+
+### Results
+
+| Frame | Armor Match | Pose Alignment | Quality |
+|-------|-------------|----------------|---------|
+| 01 | EXACT ✓ | Good | Minor edge artifacts |
+| 05 | EXACT ✓ | Good | Minor edge artifacts |
+| 10 | EXACT ✓ | Good | Minor edge artifacts |
+| 15 | EXACT ✓ | Good | Minor edge artifacts |
+
+### Remaining Issues to Refine
+
+1. **Edge artifacts** - Where warp stretches pixels, some blurring occurs
+2. **Background blending** - Could be cleaner at body edges
+3. **Large pose differences** - May need additional handling for big movements
+
+### Implementation
+
+See `test_optical_flow_warp.py` for the working implementation using OpenCV's Farneback optical flow.
+
+### Key Insight
+
+**AI generation cannot replicate exact textures** - it always creates NEW content influenced by references. For exact texture preservation, use non-AI pixel manipulation (warping, morphing, compositing).
