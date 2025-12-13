@@ -47,3 +47,34 @@ def compute_optical_flow(source: np.ndarray, target: np.ndarray) -> np.ndarray:
     )
 
     return flow
+
+
+def warp_image(source: np.ndarray, flow: np.ndarray) -> np.ndarray:
+    """Warp source image using optical flow field.
+
+    Args:
+        source: Source BGR image to warp
+        flow: Flow field from compute_optical_flow
+
+    Returns:
+        Warped BGR image
+    """
+    h, w = flow.shape[:2]
+
+    # Create coordinate grid
+    x, y = np.meshgrid(np.arange(w), np.arange(h))
+
+    # Apply flow displacements to coordinates
+    # Flow tells us where pixels moved TO, but remap needs where to sample FROM
+    # So we subtract the flow to get the sampling coordinates
+    map_x = (x - flow[..., 0]).astype(np.float32)
+    map_y = (y - flow[..., 1]).astype(np.float32)
+
+    # Remap (warp) the image
+    warped = cv2.remap(
+        source, map_x, map_y,
+        cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REFLECT
+    )
+
+    return warped

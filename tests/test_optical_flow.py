@@ -59,3 +59,23 @@ class TestOpticalFlow:
         assert isinstance(flow, np.ndarray)
         assert flow.shape == (50, 50, 2)  # (H, W, 2) for dx, dy
         assert flow.dtype == np.float32
+
+    def test_warp_image_applies_flow(self):
+        """Warp should move pixels according to flow field."""
+        from sprite_clothing_gen.optical_flow import warp_image
+
+        # Create source image with white square
+        source = np.zeros((50, 50, 3), dtype=np.uint8)
+        source[20:30, 20:30] = [255, 255, 255]
+
+        # Create flow that shifts everything +5 pixels in x
+        flow = np.zeros((50, 50, 2), dtype=np.float32)
+        flow[:, :, 0] = 5  # dx = 5
+
+        warped = warp_image(source, flow)
+
+        assert warped.shape == source.shape
+        # Original white square was at x=20:30
+        # After +5 shift, it should be at x=25:35
+        # Check center of shifted region has white pixels
+        assert warped[25, 30, 0] > 200  # Should be white-ish
