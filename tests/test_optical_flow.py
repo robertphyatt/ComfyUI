@@ -40,3 +40,22 @@ class TestImageIO:
         assert loaded.size == (10, 10)
         # Should be blue (0, 0, 255) in RGB
         assert loaded.getpixel((0, 0)) == (0, 0, 255)
+
+
+class TestOpticalFlow:
+    def test_compute_optical_flow_returns_flow_field(self):
+        """Optical flow should return (H, W, 2) displacement field."""
+        from sprite_clothing_gen.optical_flow import compute_optical_flow
+
+        # Create two simple images: source and shifted target
+        source = np.zeros((50, 50, 3), dtype=np.uint8)
+        source[20:30, 20:30] = [255, 255, 255]  # White square
+
+        target = np.zeros((50, 50, 3), dtype=np.uint8)
+        target[22:32, 22:32] = [255, 255, 255]  # Shifted +2 pixels
+
+        flow = compute_optical_flow(source, target)
+
+        assert isinstance(flow, np.ndarray)
+        assert flow.shape == (50, 50, 2)  # (H, W, 2) for dx, dy
+        assert flow.dtype == np.float32
