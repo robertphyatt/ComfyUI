@@ -1,5 +1,10 @@
 # Depth ControlNet Orientation Fix - December 13, 2025
 
+## Status: PARTIAL SUCCESS - Orientation Fixed, Style Transfer FAILING
+
+**What's Working:** Character orientation is now preserved (all frames back-facing)
+**What's NOT Working:** Armor style does NOT match reference images AT ALL
+
 ## Problem
 
 The sprite clothing generation pipeline was producing characters facing the **wrong direction** (front-facing instead of back-facing) despite:
@@ -90,3 +95,57 @@ At denoise 0.5:
 ## Key Insight
 
 **The model's prior for human figures is so strong that even with ControlNet guidance, it will generate front-facing characters unless the base image structure is strongly preserved through low denoise values.**
+
+---
+
+## CRITICAL PROBLEM: Style Transfer Not Working
+
+### What the Reference Armor Looks Like
+- Dark brown leather with consistent coloring
+- Detailed pixel art texture with shading
+- Specific design: chest plate, shoulder pads, belt, leg armor
+- Rich brown tones throughout (no gray, no blue)
+
+### What IPAdapter is Producing
+- Mixed colors: tan, gray, blue, some brown
+- Generic armor shapes that don't match reference design
+- Inconsistent style between frames
+- Gray mannequin showing through
+- Looks like "some armor" not "THE armor from the reference"
+
+### Why IPAdapter is Failing
+
+IPAdapter extracts a **global style embedding** from the reference image and applies it to the generation. This captures:
+- General color palette (somewhat)
+- Rough style (pixel art-ish)
+- Overall "feeling" of the image
+
+But it does NOT capture:
+- Exact armor design/shape
+- Specific texture patterns
+- Precise color matching
+- Per-pixel detail transfer
+
+**IPAdapter is a style transfer tool, not a texture copy tool.** It makes things "look similar in style" but doesn't replicate exact visual elements.
+
+### Tests Performed (All Failed to Match Reference)
+
+| IPAdapter Weight | Denoise | Result |
+|-----------------|---------|--------|
+| 0.8 | 0.65 | Wrong orientation on some frames |
+| 1.0 | 0.65 | Frame 05 still front-facing |
+| 1.2 | 0.50 | Orientation fixed, but armor is tan/gray mix |
+| 1.5 | 0.50 | Slightly more brown, still doesn't match |
+
+**None of these configurations produced armor that matches the reference.**
+
+## Next Steps to Investigate
+
+Based on Gemini research and the nature of the problem:
+
+1. **ControlNet Reference-Only Mode** - Uses reference image as structural guide
+2. **Inpainting Approach** - Generate only on masked body region
+3. **Different IPAdapter Models** - Try IP-Adapter-FaceID or other variants
+4. **Multi-reference Batching** - Feed multiple reference frames
+5. **ControlNet Tile** - May preserve local texture better (previously attempted, failed)
+6. **Lower-level approach** - Direct pixel manipulation/compositing instead of generation
