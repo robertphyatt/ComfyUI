@@ -307,20 +307,41 @@ def annotate_directory(
 
 
 if __name__ == "__main__":
-    import sys
+    import argparse
 
-    if len(sys.argv) < 2:
-        print("Usage: python -m sprite_keypoint_detector.annotator <image_dir> [output.json] [--seed seed.json]")
-        print("Example: python -m sprite_keypoint_detector.annotator training_data/frames annotations.json --seed seed_annotations.json")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Interactive keypoint annotation tool for sprite frames"
+    )
+    parser.add_argument(
+        "image_dir",
+        type=Path,
+        help="Directory containing sprite images"
+    )
+    parser.add_argument(
+        "output_json",
+        type=Path,
+        nargs='?',
+        help="Path to save/load annotations JSON (default: <image_dir>/annotations.json)"
+    )
+    parser.add_argument(
+        "-p", "--pattern",
+        default="*.png",
+        help="Glob pattern for image files (default: *.png)"
+    )
+    parser.add_argument(
+        "--seed",
+        type=Path,
+        help="Path to seed annotations JSON (AI-generated initial keypoints)"
+    )
 
-    image_dir = Path(sys.argv[1])
-    output_json = Path(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith('--') else image_dir / "annotations.json"
+    args = parser.parse_args()
 
-    seed_json = None
-    if '--seed' in sys.argv:
-        idx = sys.argv.index('--seed')
-        if idx + 1 < len(sys.argv):
-            seed_json = Path(sys.argv[idx + 1])
+    # Default output_json if not provided
+    output_json = args.output_json if args.output_json else args.image_dir / "annotations.json"
 
-    annotate_directory(image_dir, output_json, seed_json=seed_json)
+    annotate_directory(
+        args.image_dir,
+        output_json,
+        pattern=args.pattern,
+        seed_json=args.seed
+    )
