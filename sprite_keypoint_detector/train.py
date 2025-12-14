@@ -6,7 +6,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from pathlib import Path
 import json
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 import numpy as np
 
 from .model import SpriteKeypointDetector, count_parameters
@@ -29,7 +29,7 @@ def train_epoch(model, loader, optimizer, criterion, device) -> float:
     return total_loss / len(loader)
 
 
-def validate(model, loader, criterion, device, image_size: int = 512) -> Dict[str, float]:
+def validate(model, loader, criterion, device, image_size: Tuple[int, int] = (512, 512)) -> Dict[str, float]:
     model.eval()
     total_loss = 0.0
     total_error = 0.0
@@ -43,8 +43,10 @@ def validate(model, loader, criterion, device, image_size: int = 512) -> Dict[st
             loss = criterion(predictions, keypoints)
             total_loss += loss.item()
 
-            pred_px = predictions * image_size
-            gt_px = keypoints * image_size
+            # Scale x and y coordinates separately for non-square images
+            scale = torch.tensor([image_size[0], image_size[1]], device=device, dtype=predictions.dtype)
+            pred_px = predictions * scale
+            gt_px = keypoints * scale
             error = torch.sqrt(((pred_px - gt_px) ** 2).sum(dim=-1)).mean()
             total_error += error.item() * images.size(0)
             n_samples += images.size(0)

@@ -85,18 +85,27 @@ def create_data_loaders(
     val_split: float = 0.2,
     seed: int = 42
 ) -> Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
-    full_dataset = SpriteKeypointDataset(annotations_json, image_dir, augment=False)
+    # Create temporary dataset just to get indices
+    temp_dataset = SpriteKeypointDataset(annotations_json, image_dir, augment=False)
 
-    n_total = len(full_dataset)
+    n_total = len(temp_dataset)
     n_val = int(n_total * val_split)
     n_train = n_total - n_val
 
+    # Split indices, not the dataset
     generator = torch.Generator().manual_seed(seed)
-    train_dataset, val_dataset = torch.utils.data.random_split(
-        full_dataset, [n_train, n_val], generator=generator
+    indices = list(range(n_total))
+    train_indices, val_indices = torch.utils.data.random_split(
+        indices, [n_train, n_val], generator=generator
     )
 
-    train_dataset.dataset.augment = True
+    # Create separate dataset instances with different augmentation settings
+    train_full_dataset = SpriteKeypointDataset(annotations_json, image_dir, augment=True)
+    val_full_dataset = SpriteKeypointDataset(annotations_json, image_dir, augment=False)
+
+    # Apply indices to separate datasets
+    train_dataset = torch.utils.data.Subset(train_full_dataset, train_indices)
+    val_dataset = torch.utils.data.Subset(val_full_dataset, val_indices)
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True, num_workers=0
