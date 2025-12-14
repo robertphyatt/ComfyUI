@@ -124,22 +124,25 @@ class TestWarpClothingToPose:
     def test_warp_clothing_to_pose_creates_output(self, tmp_path):
         """Main function should create output file when poses differ."""
         from sprite_clothing_gen.optical_flow import warp_clothing_to_pose
+        import numpy as np
 
-        # Create simple clothed image (gray body on white)
-        clothed = Image.new('RGB', (50, 50), color=(255, 255, 255))
-        for x in range(20, 30):
-            for y in range(20, 30):
-                clothed.putpixel((x, y), (100, 80, 60))  # Brown-ish
+        # Create RGBA clothed image (gray body with transparent background)
+        clothed = Image.new('RGBA', (50, 50), (255, 255, 255, 0))
+        clothed_arr = np.array(clothed)
+        # Body at position 20:30
+        clothed_arr[20:30, 20:30, :3] = [100, 80, 60]  # Brown-ish
+        clothed_arr[20:30, 20:30, 3] = 255  # Visible
         clothed_path = tmp_path / "clothed.png"
-        clothed.save(clothed_path)
+        Image.fromarray(clothed_arr).save(clothed_path)
 
-        # Create mannequin image (DIFFERENT pose - shifted)
-        mannequin = Image.new('RGB', (50, 50), color=(255, 255, 255))
-        for x in range(25, 35):  # Shifted +5 pixels
-            for y in range(25, 35):
-                mannequin.putpixel((x, y), (128, 128, 128))  # Gray
+        # Create RGBA mannequin image (DIFFERENT pose - shifted +5 pixels)
+        mannequin = Image.new('RGBA', (50, 50), (255, 255, 255, 0))
+        mannequin_arr = np.array(mannequin)
+        # Body at SHIFTED position 25:35
+        mannequin_arr[25:35, 25:35, :3] = [128, 128, 128]  # Gray
+        mannequin_arr[25:35, 25:35, 3] = 255  # Visible
         mannequin_path = tmp_path / "mannequin.png"
-        mannequin.save(mannequin_path)
+        Image.fromarray(mannequin_arr).save(mannequin_path)
 
         output_path = tmp_path / "output.png"
 
@@ -152,22 +155,24 @@ class TestWarpClothingToPose:
     def test_warp_clothing_to_pose_skips_when_aligned(self, tmp_path):
         """Should skip warping and copy directly when poses already match."""
         from sprite_clothing_gen.optical_flow import warp_clothing_to_pose
+        import numpy as np
 
-        # Create clothed and mannequin with SAME pose
-        clothed = Image.new('RGB', (50, 50), color=(255, 255, 255))
-        for x in range(20, 30):
-            for y in range(20, 30):
-                clothed.putpixel((x, y), (100, 80, 60))  # Brown armor
+        # Create RGBA clothed and mannequin with SAME pose and SAME alpha coverage
+        clothed = Image.new('RGBA', (50, 50), (255, 255, 255, 0))
+        clothed_arr = np.array(clothed)
+        # Body at position 20:30
+        clothed_arr[20:30, 20:30, :3] = [100, 80, 60]  # Brown armor
+        clothed_arr[20:30, 20:30, 3] = 255  # Visible
         clothed_path = tmp_path / "clothed.png"
-        clothed.save(clothed_path)
+        Image.fromarray(clothed_arr).save(clothed_path)
 
-        # Mannequin at SAME position
-        mannequin = Image.new('RGB', (50, 50), color=(255, 255, 255))
-        for x in range(20, 30):  # Same position as clothed
-            for y in range(20, 30):
-                mannequin.putpixel((x, y), (128, 128, 128))  # Gray
+        # Mannequin at SAME position with SAME alpha coverage
+        mannequin = Image.new('RGBA', (50, 50), (255, 255, 255, 0))
+        mannequin_arr = np.array(mannequin)
+        mannequin_arr[20:30, 20:30, :3] = [128, 128, 128]  # Gray
+        mannequin_arr[20:30, 20:30, 3] = 255  # Visible
         mannequin_path = tmp_path / "mannequin.png"
-        mannequin.save(mannequin_path)
+        Image.fromarray(mannequin_arr).save(mannequin_path)
 
         output_path = tmp_path / "output.png"
 
@@ -209,3 +214,48 @@ class TestAlphaBasedAlignment:
         # Should NOT be aligned - base has visible pixels clothed doesn't cover
         result = images_already_aligned_alpha(clothed_path, base_path, threshold=0.98)
         assert result == False, "Should detect alpha mismatch (mannequin showing through)"
+
+    def test_warp_clothing_to_pose_warps_when_alpha_mismatch(self, tmp_path):
+        """warp_clothing_to_pose should warp when alpha channels differ.
+
+        This tests the bug where grayscale silhouettes are similar (high IoU)
+        but alpha coverage differs (mannequin shoulders visible, armor missing).
+        Old code would skip warping, new code should detect alpha mismatch.
+        """
+        from sprite_clothing_gen.optical_flow import warp_clothing_to_pose
+        from PIL import Image
+        import numpy as np
+
+        # Create mannequin with full body visible
+        # Use SAME grayscale values everywhere to ensure grayscale IoU is high
+        mannequin = Image.new('RGBA', (100, 100), (255, 255, 255, 0))
+        mannequin_arr = np.array(mannequin)
+        # Full body: rows 20-80 (shoulders at top, torso below)
+        mannequin_arr[20:80, 30:70, :3] = [128, 128, 128]  # Gray body
+        mannequin_arr[20:80, 30:70, 3] = 255  # All visible
+        mannequin_path = tmp_path / "mannequin.png"
+        Image.fromarray(mannequin_arr).save(mannequin_path)
+
+        # Create clothed with SAME grayscale but missing shoulders in alpha
+        # This mimics the real bug: armor doesn't cover shoulders
+        clothed = Image.new('RGBA', (100, 100), (255, 255, 255, 0))
+        clothed_arr = np.array(clothed)
+        # Full body area with SAME gray values (grayscale IoU will be high)
+        clothed_arr[20:80, 30:70, :3] = [128, 128, 128]  # Same gray
+        # BUT only lower portion visible (missing shoulders rows 20-30)
+        clothed_arr[20:30, 30:70, 3] = 0    # Shoulders transparent (bug!)
+        clothed_arr[30:80, 30:70, 3] = 255  # Torso visible
+        clothed_path = tmp_path / "clothed.png"
+        Image.fromarray(clothed_arr).save(clothed_path)
+
+        output_path = tmp_path / "output.png"
+
+        result_path, was_skipped = warp_clothing_to_pose(
+            clothed_path, mannequin_path, output_path,
+            alignment_threshold=0.98
+        )
+
+        # Should NOT skip - alpha mismatch means mannequin shoulders show through
+        # Old code (images_already_aligned) would skip because grayscale IoU is high
+        # New code (images_already_aligned_alpha) should detect alpha gap and warp
+        assert was_skipped == False, "Should warp when mannequin pixels exposed through armor alpha gaps"

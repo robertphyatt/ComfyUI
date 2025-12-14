@@ -249,15 +249,16 @@ def warp_clothing_to_pose(
         Tuple of (output_path, was_skipped) where was_skipped is True
         if the image was already aligned and copied without warping
     """
-    # Load images
-    clothed = load_image_bgr(clothed_path)
-    mannequin = load_image_bgr(mannequin_path)
-
-    # Check if already aligned - skip warp if so
-    if images_already_aligned(clothed, mannequin, alignment_threshold):
+    # Check if already aligned using alpha channels (more accurate)
+    # Must check BEFORE loading images since this function takes paths
+    if images_already_aligned_alpha(clothed_path, mannequin_path, alignment_threshold):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(clothed_path, output_path)
         return output_path, True  # Skipped warping
+
+    # Load images for warping
+    clothed = load_image_bgr(clothed_path)
+    mannequin = load_image_bgr(mannequin_path)
 
     # Compute flow: how pixels move from clothed to mannequin
     flow = compute_optical_flow(clothed, mannequin)
