@@ -97,6 +97,70 @@ def create_body_mask(image: np.ndarray, threshold: int = 245) -> np.ndarray:
     return mask
 
 
+def create_body_mask_from_alpha(image_path: Path) -> np.ndarray:
+    """Create binary mask from image alpha channel.
+
+    More accurate than grayscale thresholding for sprites with transparency.
+
+    Args:
+        image_path: Path to image with alpha channel
+
+    Returns:
+        Binary mask (255 = visible, 0 = transparent)
+    """
+    img = Image.open(image_path).convert('RGBA')
+    alpha = np.array(img)[:, :, 3]
+    mask = (alpha > 128).astype(np.uint8) * 255
+    return mask
+
+
+def images_already_aligned_alpha(
+    clothed_path: Path,
+    mannequin_path: Path,
+    threshold: float = 0.98
+) -> bool:
+    """Check if clothed image fully covers mannequin using alpha channels.
+
+    Critical: If ANY mannequin pixels are visible that clothed doesn't cover,
+    we need warping to fill those gaps. This catches shoulder peek-through issues.
+
+    Args:
+        clothed_path: Path to clothed reference frame (RGBA)
+        mannequin_path: Path to base mannequin frame (RGBA)
+        threshold: Coverage threshold (0-1), how much of mannequin must be covered
+
+    Returns:
+        True only if clothed covers ALL visible mannequin pixels
+    """
+    # Load alpha channels
+    mannequin_alpha = np.array(Image.open(mannequin_path).convert('RGBA'))[:, :, 3]
+    clothed_alpha = np.array(Image.open(clothed_path).convert('RGBA'))[:, :, 3]
+
+    # Where mannequin is visible
+    mannequin_visible = mannequin_alpha > 128
+
+    # Where clothed is visible
+    clothed_visible = clothed_alpha > 128
+
+    # Critical check: mannequin pixels that clothed doesn't cover
+    mannequin_exposed = np.logical_and(mannequin_visible, ~clothed_visible)
+    exposed_count = mannequin_exposed.sum()
+
+    if exposed_count > 0:
+        # ANY exposed mannequin pixels = not aligned (need warping)
+        return False
+
+    # Also check IoU for general alignment
+    intersection = np.logical_and(clothed_visible, mannequin_visible).sum()
+    union = np.logical_or(clothed_visible, mannequin_visible).sum()
+
+    if union == 0:
+        return True
+
+    iou = intersection / union
+    return iou >= threshold
+
+
 def blend_with_background(
     warped: np.ndarray,
     background: np.ndarray,
@@ -166,7 +230,7 @@ def warp_clothing_to_pose(
     mannequin_path: Path,
     output_path: Path,
     debug_dir: Optional[Path] = None,
-    alignment_threshold: float = 0.98
+    alignment_threshold: float = 0.999  # Very strict - only skip for nearly identical poses
 ) -> Tuple[Path, bool]:
     """Warp clothed reference to match mannequin pose.
 

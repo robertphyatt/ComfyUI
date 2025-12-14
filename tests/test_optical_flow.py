@@ -181,3 +181,31 @@ class TestWarpClothingToPose:
         output_img = Image.open(output_path)
         clothed_img = Image.open(clothed_path)
         assert list(output_img.getdata()) == list(clothed_img.getdata())
+
+
+class TestAlphaBasedAlignment:
+    def test_images_already_aligned_detects_alpha_mismatch(self, tmp_path):
+        """Alignment check should fail when alpha channels differ significantly."""
+        from sprite_clothing_gen.optical_flow import images_already_aligned_alpha
+        from PIL import Image
+        import numpy as np
+
+        # Create base image with full body visible (alpha=255 for body area)
+        base = Image.new('RGBA', (100, 100), (255, 255, 255, 0))  # Transparent bg
+        base_arr = np.array(base)
+        base_arr[20:80, 30:70, :3] = [128, 128, 128]  # Gray body
+        base_arr[20:80, 30:70, 3] = 255  # Visible
+        base_path = tmp_path / "base.png"
+        Image.fromarray(base_arr).save(base_path)
+
+        # Create clothed image with SMALLER visible area (shoulders missing)
+        clothed = Image.new('RGBA', (100, 100), (255, 255, 255, 0))
+        clothed_arr = np.array(clothed)
+        clothed_arr[30:80, 30:70, :3] = [139, 69, 19]  # Brown armor (smaller)
+        clothed_arr[30:80, 30:70, 3] = 255  # Visible
+        clothed_path = tmp_path / "clothed.png"
+        Image.fromarray(clothed_arr).save(clothed_path)
+
+        # Should NOT be aligned - base has visible pixels clothed doesn't cover
+        result = images_already_aligned_alpha(clothed_path, base_path, threshold=0.98)
+        assert result == False, "Should detect alpha mismatch (mannequin showing through)"
