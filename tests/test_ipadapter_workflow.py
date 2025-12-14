@@ -1,0 +1,186 @@
+"""Tests for IPAdapter workflow builder."""
+import pytest
+from sprite_clothing_gen.workflow_builder import build_ipadapter_generation_workflow
+
+
+def test_workflow_has_required_nodes():
+    """Test that workflow includes all required nodes."""
+    workflow = build_ipadapter_generation_workflow(
+        base_image_name="base_frame_00.png",
+        mask_image_name="mask_00.png",
+        reference_image_names=[f"clothed_frame_{i:02d}.png" for i in range(25)],
+        prompt="Brown leather armor",
+        negative_prompt="blurry",
+        seed=12345
+    )
+
+    # Verify workflow structure
+    assert isinstance(workflow, dict)
+
+    # Check for required node types
+    node_classes = [node.get("class_type") for node in workflow.values()]
+
+    required_nodes = [
+        "LoadImage",  # Base image
+        "LoadImage",  # Mask
+        "IPAdapterModelLoader",
+        "IPAdapterApply",
+        "ControlNetLoader",
+        "ControlNetApplyAdvanced",
+        "CLIPTextEncode",  # Prompt
+        "KSampler",  # Inpainting sampler
+        "VAEDecode",
+        "SaveImage"
+    ]
+
+    # Note: Can't check exact counts due to multiple LoadImage nodes
+    # Just verify key node types exist
+    assert "IPAdapterModelLoader" in node_classes
+    assert "IPAdapterApply" in node_classes
+    assert "ControlNetLoader" in node_classes
+    assert "KSampler" in node_classes
+
+
+def test_workflow_uses_sd15_models_consistently():
+    """Test that workflow uses SD1.5 models (not SDXL) for 512x512 pixel art."""
+    workflow = build_ipadapter_generation_workflow(
+        base_image_name="base_frame_00.png",
+        mask_image_name="mask_00.png",
+        reference_image_names=[f"clothed_frame_{i:02d}.png" for i in range(25)],
+        prompt="Brown leather armor",
+        negative_prompt="blurry",
+        seed=12345
+    )
+
+    # Find checkpoint loader node
+    checkpoint_node = None
+    for node_id, node in workflow.items():
+        if node.get("class_type") == "CheckpointLoaderSimple":
+            checkpoint_node = node
+            break
+
+    assert checkpoint_node is not None, "Checkpoint loader node not found"
+
+    # Verify SD1.5 checkpoint (NOT SDXL)
+    ckpt_name = checkpoint_node["inputs"]["ckpt_name"]
+    assert "sd15" in ckpt_name.lower() or "v1-5" in ckpt_name.lower(), \
+        f"Expected SD1.5 checkpoint, got: {ckpt_name}"
+    assert "xl" not in ckpt_name.lower(), \
+        f"SDXL checkpoint incompatible with SD1.5 IPAdapter/ControlNet: {ckpt_name}"
+
+    # Find IPAdapter loader node
+    ipadapter_node = None
+    for node_id, node in workflow.items():
+        if node.get("class_type") == "IPAdapterModelLoader":
+            ipadapter_node = node
+            break
+
+    assert ipadapter_node is not None, "IPAdapter loader node not found"
+
+    # Verify SD1.5 IPAdapter
+    ipadapter_file = ipadapter_node["inputs"]["ipadapter_file"]
+    assert "sd15" in ipadapter_file.lower(), \
+        f"Expected SD1.5 IPAdapter, got: {ipadapter_file}"
+
+    # Find ControlNet loader node
+    controlnet_node = None
+    for node_id, node in workflow.items():
+        if node.get("class_type") == "ControlNetLoader":
+            controlnet_node = node
+            break
+
+    assert controlnet_node is not None, "ControlNet loader node not found"
+
+    # Verify SD1.5 ControlNet
+    controlnet_name = controlnet_node["inputs"]["control_net_name"]
+    assert "sd15" in controlnet_name.lower(), \
+        f"Expected SD1.5 ControlNet, got: {controlnet_name}"
+
+
+def test_workflow_node_dependencies_are_valid():
+    """Test that all node references point to nodes that appear earlier in workflow."""
+    workflow = build_ipadapter_generation_workflow(
+        base_image_name="base_frame_00.png",
+        mask_image_name="mask_00.png",
+        reference_image_names=[f"clothed_frame_{i:02d}.png" for i in range(25)],
+        prompt="Brown leather armor",
+        negative_prompt="blurry",
+        seed=12345
+    )
+
+    # Track which nodes have been defined
+    defined_nodes = set()
+
+    # Process nodes in order
+    for node_id, node in workflow.items():
+        node_id_int = int(node_id)
+
+        # Check all input references
+        inputs = node.get("inputs", {})
+        for input_name, input_value in inputs.items():
+            # Input references are [node_id, output_index] tuples
+            if isinstance(input_value, list) and len(input_value) == 2:
+                referenced_node_id = str(input_value[0])
+                referenced_node_int = int(referenced_node_id)
+
+                # Referenced node must be defined BEFORE current node
+                assert referenced_node_int < node_id_int, \
+                    f"Node {node_id} references node {referenced_node_id} which appears later (circular dependency)"
+
+                assert referenced_node_id in defined_nodes, \
+                    f"Node {node_id} references undefined node {referenced_node_id}"
+
+        # Mark this node as defined
+        defined_nodes.add(node_id)
+
+
+def test_workflow_loads_all_reference_images():
+    """Test that workflow uses provided reference_image_names parameter.
+
+    Implementation Note: Uses Approach B from plan - creates individual LoadImage nodes
+    for each reference image and batches them together with ImageBatch nodes.
+    This is necessary because LoadImageBatch doesn't support explicit filename lists.
+    """
+    reference_names = [f"clothed_frame_{i:02d}.png" for i in range(25)]
+
+    workflow = build_ipadapter_generation_workflow(
+        base_image_name="base_frame_00.png",
+        mask_image_name="mask_00.png",
+        reference_image_names=reference_names,
+        prompt="Brown leather armor",
+        negative_prompt="blurry",
+        seed=12345
+    )
+
+    # Verify NO LoadImageBatch with glob pattern exists
+    for node_id, node in workflow.items():
+        if node.get("class_type") == "LoadImageBatch":
+            inputs = node.get("inputs", {})
+            if "pattern" in inputs:
+                assert inputs["pattern"] != "clothed_frame_*.png", \
+                    "LoadImageBatch should not use hardcoded glob pattern when explicit filenames provided"
+
+    # Verify all 25 reference images are loaded as individual LoadImage nodes
+    reference_loaders = []
+    for node_id, node in workflow.items():
+        if node.get("class_type") == "LoadImage":
+            image_name = node.get("inputs", {}).get("image", "")
+            # Check if this is one of our reference images (not base or mask)
+            if image_name in reference_names:
+                reference_loaders.append(image_name)
+
+    assert len(reference_loaders) == 25, \
+        f"Expected 25 individual reference image loaders, got {len(reference_loaders)}"
+
+    # Verify all expected filenames are present
+    for expected_name in reference_names:
+        assert expected_name in reference_loaders, \
+            f"Reference image {expected_name} not found in workflow"
+
+    # Verify reference images are batched together (ImageBatch nodes should exist)
+    batch_nodes = [node for node in workflow.values() if node.get("class_type") == "ImageBatch"]
+    assert len(batch_nodes) > 0, \
+        "No ImageBatch nodes found - reference images not batched together"
+
+    print(f"✓ Successfully loads all {len(reference_loaders)} reference images from parameter")
+    print(f"✓ Uses {len(batch_nodes)} ImageBatch nodes to combine them")

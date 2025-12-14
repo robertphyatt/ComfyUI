@@ -1,6 +1,6 @@
 """ComfyUI API client for workflow execution."""
 
-import json
+import time
 import uuid
 import requests
 from typing import Dict, Any, Optional
@@ -71,11 +71,49 @@ class ComfyUIClient:
         Returns:
             History dict if available, None otherwise
         """
-        response = self.session.get(f"{self.api_url}/history/{prompt_id}")
+        response = self.session.get(f"{self.api_url}/history/{prompt_id}", timeout=10)
         if response.status_code == 200:
             history = response.json()
             return history.get(prompt_id)
         return None
+
+    def wait_for_completion(self, prompt_id: str, timeout: int = 60) -> Dict[str, Any]:
+        """Wait for a prompt to complete execution.
+
+        Args:
+            prompt_id: ID of the prompt to wait for
+            timeout: Maximum seconds to wait
+
+        Returns:
+            History dict containing outputs
+
+        Raises:
+            RuntimeError: If execution times out or fails
+        """
+        start_time = time.time()
+
+        while True:
+            if time.time() - start_time > timeout:
+                raise RuntimeError(f"Execution timed out after {timeout}s")
+
+            history = self.get_history(prompt_id)
+            if history is not None:
+                # Check for execution errors first
+                status = history.get('status', {})
+                if status.get('status_str') == 'error':
+                    messages = status.get('messages', [])
+                    error_msg = "Unknown error"
+                    for msg in messages:
+                        if msg[0] == 'execution_error':
+                            error_msg = str(msg[1])
+                            break
+                    raise RuntimeError(f"Workflow execution failed: {error_msg}")
+
+                # Check if execution completed successfully
+                if "outputs" in history and history["outputs"]:
+                    return history
+
+            time.sleep(0.5)
 
     def upload_image(self, image_path: Path, subfolder: str = "") -> str:
         """Upload an image to ComfyUI input directory.
@@ -121,7 +159,7 @@ class ComfyUIClient:
             RuntimeError: If download fails
         """
         params = {'filename': filename, 'subfolder': subfolder, 'type': 'output'}
-        response = self.session.get(f"{self.base_url}/view", params=params)
+        response = self.session.get(f"{self.base_url}/view", params=params, timeout=60)
 
         if response.status_code != 200:
             raise RuntimeError(f"Failed to download image: {response.text}")
