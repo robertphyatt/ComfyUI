@@ -1,0 +1,2081 @@
+{
+  "base_frame_00.png": {
+    "image": "base_frame_00.png",
+    "keypoints": {
+      "head": [
+        249,
+        172
+      ],
+      "neck": [
+        252,
+        217
+      ],
+      "left_shoulder": [
+        207,
+        244
+      ],
+      "right_shoulder": [
+        298,
+        234
+      ],
+      "left_elbow": [
+        199,
+        284
+      ],
+      "right_elbow": [
+        316,
+        267
+      ],
+      "left_wrist": [
+        207,
+        295
+      ],
+      "right_wrist": [
+        325,
+        293
+      ],
+      "left_fingertip": [
+        221,
+        298
+      ],
+      "right_fingertip": [
+        308,
+        311
+      ],
+      "left_hip": [
+        237,
+        303
+      ],
+      "right_hip": [
+        275,
+        303
+      ],
+      "left_knee": [
+        236,
+        337
+      ],
+      "right_knee": [
+        277,
+        335
+      ],
+      "left_ankle": [
+        237,
+        352
+      ],
+      "right_ankle": [
+        277,
+        373
+      ],
+      "left_toe": [
+        236,
+        381
+      ],
+      "right_toe": [
+        278,
+        373
+      ]
+    }
+  },
+  "base_frame_01.png": {
+    "image": "base_frame_01.png",
+    "keypoints": {
+      "head": [
+        253,
+        178
+      ],
+      "neck": [
+        255,
+        222
+      ],
+      "left_shoulder": [
+        211,
+        247
+      ],
+      "right_shoulder": [
+        298,
+        240
+      ],
+      "left_elbow": [
+        201,
+        283
+      ],
+      "right_elbow": [
+        317,
+        268
+      ],
+      "left_wrist": [
+        211,
+        295
+      ],
+      "right_wrist": [
+        326,
+        297
+      ],
+      "left_fingertip": [
+        221,
+        298
+      ],
+      "right_fingertip": [
+        308,
+        312
+      ],
+      "left_hip": [
+        237,
+        305
+      ],
+      "right_hip": [
+        274,
+        305
+      ],
+      "left_knee": [
+        235,
+        335
+      ],
+      "right_knee": [
+        276,
+        339
+      ],
+      "left_ankle": [
+        236,
+        345
+      ],
+      "right_ankle": [
+        276,
+        378
+      ],
+      "left_toe": [
+        236,
+        383
+      ],
+      "right_toe": [
+        276,
+        379
+      ]
+    }
+  },
+  "base_frame_02.png": {
+    "image": "base_frame_02.png",
+    "keypoints": {
+      "head": [
+        256,
+        180
+      ],
+      "neck": [
+        258,
+        225
+      ],
+      "left_shoulder": [
+        214,
+        250
+      ],
+      "right_shoulder": [
+        303,
+        246
+      ],
+      "left_elbow": [
+        202,
+        286
+      ],
+      "right_elbow": [
+        319,
+        273
+      ],
+      "left_wrist": [
+        211,
+        301
+      ],
+      "right_wrist": [
+        327,
+        303
+      ],
+      "left_fingertip": [
+        221,
+        304
+      ],
+      "right_fingertip": [
+        310,
+        317
+      ],
+      "left_hip": [
+        241,
+        310
+      ],
+      "right_hip": [
+        277,
+        307
+      ],
+      "left_knee": [
+        236,
+        332
+      ],
+      "right_knee": [
+        278,
+        339
+      ],
+      "left_ankle": [
+        236,
+        338
+      ],
+      "right_ankle": [
+        278,
+        378
+      ],
+      "left_toe": [
+        234,
+        380
+      ],
+      "right_toe": [
+        278,
+        379
+      ]
+    }
+  },
+  "base_frame_03.png": {
+    "image": "base_frame_03.png",
+    "keypoints": {
+      "head": [
+        261,
+        176
+      ],
+      "neck": [
+        261,
+        222
+      ],
+      "left_shoulder": [
+        217,
+        242
+      ],
+      "right_shoulder": [
+        306,
+        242
+      ],
+      "left_elbow": [
+        203,
+        281
+      ],
+      "right_elbow": [
+        320,
+        277
+      ],
+      "left_wrist": [
+        203,
+        301
+      ],
+      "right_wrist": [
+        324,
+        304
+      ],
+      "left_fingertip": [
+        215,
+        309
+      ],
+      "right_fingertip": [
+        307,
+        317
+      ],
+      "left_hip": [
+        242,
+        305
+      ],
+      "right_hip": [
+        277,
+        306
+      ],
+      "left_knee": [
+        236,
+        326
+      ],
+      "right_knee": [
+        280,
+        343
+      ],
+      "left_ankle": [
+        237,
+        335
+      ],
+      "right_ankle": [
+        278,
+        377
+      ],
+      "left_toe": [
+        234,
+        375
+      ],
+      "right_toe": [
+        278,
+        379
+      ]
+    }
+  },
+  "base_frame_04.png": {
+    "image": "base_frame_04.png",
+    "keypoints": {
+      "head": [
+        264,
+        171
+      ],
+      "neck": [
+        264,
+        218
+      ],
+      "left_shoulder": [
+        218,
+        233
+      ],
+      "right_shoulder": [
+        310,
+        240
+      ],
+      "left_elbow": [
+        201,
+        268
+      ],
+      "right_elbow": [
+        321,
+        278
+      ],
+      "left_wrist": [
+        196,
+        295
+      ],
+      "right_wrist": [
+        322,
+        303
+      ],
+      "left_fingertip": [
+        209,
+        305
+      ],
+      "right_fingertip": [
+        304,
+        309
+      ],
+      "left_hip": [
+        243,
+        300
+      ],
+      "right_hip": [
+        278,
+        302
+      ],
+      "left_knee": [
+        236,
+        324
+      ],
+      "right_knee": [
+        279,
+        334
+      ],
+      "left_ankle": [
+        237,
+        349
+      ],
+      "right_ankle": [
+        279,
+        363
+      ],
+      "left_toe": [
+        235,
+        369
+      ],
+      "right_toe": [
+        279,
+        381
+      ]
+    }
+  },
+  "base_frame_05.png": {
+    "image": "base_frame_05.png",
+    "keypoints": {
+      "head": [
+        263,
+        167
+      ],
+      "neck": [
+        262,
+        216
+      ],
+      "left_shoulder": [
+        217,
+        234
+      ],
+      "right_shoulder": [
+        307,
+        240
+      ],
+      "left_elbow": [
+        200,
+        264
+      ],
+      "right_elbow": [
+        321,
+        277
+      ],
+      "left_wrist": [
+        192,
+        289
+      ],
+      "right_wrist": [
+        320,
+        297
+      ],
+      "left_fingertip": [
+        205,
+        303
+      ],
+      "right_fingertip": [
+        304,
+        307
+      ],
+      "left_hip": [
+        242,
+        303
+      ],
+      "right_hip": [
+        278,
+        302
+      ],
+      "left_knee": [
+        236,
+        327
+      ],
+      "right_knee": [
+        281,
+        333
+      ],
+      "left_ankle": [
+        235,
+        367
+      ],
+      "right_ankle": [
+        279,
+        353
+      ],
+      "left_toe": [
+        235,
+        369
+      ],
+      "right_toe": [
+        280,
+        381
+      ]
+    }
+  },
+  "base_frame_06.png": {
+    "image": "base_frame_06.png",
+    "keypoints": {
+      "head": [
+        260,
+        169
+      ],
+      "neck": [
+        260,
+        222
+      ],
+      "left_shoulder": [
+        215,
+        238
+      ],
+      "right_shoulder": [
+        308,
+        244
+      ],
+      "left_elbow": [
+        199,
+        268
+      ],
+      "right_elbow": [
+        318,
+        279
+      ],
+      "left_wrist": [
+        190,
+        293
+      ],
+      "right_wrist": [
+        316,
+        298
+      ],
+      "left_fingertip": [
+        202,
+        308
+      ],
+      "right_fingertip": [
+        302,
+        307
+      ],
+      "left_hip": [
+        242,
+        307
+      ],
+      "right_hip": [
+        278,
+        305
+      ],
+      "left_knee": [
+        235,
+        335
+      ],
+      "right_knee": [
+        281,
+        333
+      ],
+      "left_ankle": [
+        235,
+        374
+      ],
+      "right_ankle": [
+        280,
+        348
+      ],
+      "left_toe": [
+        235,
+        376
+      ],
+      "right_toe": [
+        279,
+        382
+      ]
+    }
+  },
+  "base_frame_07.png": {
+    "image": "base_frame_07.png",
+    "keypoints": {
+      "head": [
+        261,
+        177
+      ],
+      "neck": [
+        261,
+        224
+      ],
+      "left_shoulder": [
+        215,
+        238
+      ],
+      "right_shoulder": [
+        306,
+        245
+      ],
+      "left_elbow": [
+        200,
+        269
+      ],
+      "right_elbow": [
+        317,
+        280
+      ],
+      "left_wrist": [
+        189,
+        295
+      ],
+      "right_wrist": [
+        314,
+        301
+      ],
+      "left_fingertip": [
+        201,
+        309
+      ],
+      "right_fingertip": [
+        302,
+        309
+      ],
+      "left_hip": [
+        241,
+        308
+      ],
+      "right_hip": [
+        278,
+        308
+      ],
+      "left_knee": [
+        235,
+        336
+      ],
+      "right_knee": [
+        280,
+        335
+      ],
+      "left_ankle": [
+        235,
+        378
+      ],
+      "right_ankle": [
+        280,
+        343
+      ],
+      "left_toe": [
+        235,
+        380
+      ],
+      "right_toe": [
+        280,
+        382
+      ]
+    }
+  },
+  "base_frame_08.png": {
+    "image": "base_frame_08.png",
+    "keypoints": {
+      "head": [
+        257,
+        177
+      ],
+      "neck": [
+        259,
+        229
+      ],
+      "left_shoulder": [
+        214,
+        246
+      ],
+      "right_shoulder": [
+        304,
+        250
+      ],
+      "left_elbow": [
+        199,
+        275
+      ],
+      "right_elbow": [
+        317,
+        285
+      ],
+      "left_wrist": [
+        188,
+        301
+      ],
+      "right_wrist": [
+        314,
+        307
+      ],
+      "left_fingertip": [
+        201,
+        315
+      ],
+      "right_fingertip": [
+        300,
+        311
+      ],
+      "left_hip": [
+        239,
+        311
+      ],
+      "right_hip": [
+        276,
+        310
+      ],
+      "left_knee": [
+        235,
+        341
+      ],
+      "right_knee": [
+        280,
+        335
+      ],
+      "left_ankle": [
+        234,
+        383
+      ],
+      "right_ankle": [
+        280,
+        338
+      ],
+      "left_toe": [
+        235,
+        383
+      ],
+      "right_toe": [
+        280,
+        377
+      ]
+    }
+  },
+  "base_frame_09.png": {
+    "image": "base_frame_09.png",
+    "keypoints": {
+      "head": [
+        253,
+        176
+      ],
+      "neck": [
+        256,
+        224
+      ],
+      "left_shoulder": [
+        210,
+        244
+      ],
+      "right_shoulder": [
+        302,
+        244
+      ],
+      "left_elbow": [
+        197,
+        280
+      ],
+      "right_elbow": [
+        315,
+        283
+      ],
+      "left_wrist": [
+        191,
+        304
+      ],
+      "right_wrist": [
+        316,
+        303
+      ],
+      "left_fingertip": [
+        200,
+        317
+      ],
+      "right_fingertip": [
+        303,
+        314
+      ],
+      "left_hip": [
+        238,
+        307
+      ],
+      "right_hip": [
+        276,
+        305
+      ],
+      "left_knee": [
+        235,
+        341
+      ],
+      "right_knee": [
+        280,
+        329
+      ],
+      "left_ankle": [
+        235,
+        381
+      ],
+      "right_ankle": [
+        280,
+        336
+      ],
+      "left_toe": [
+        236,
+        383
+      ],
+      "right_toe": [
+        282,
+        376
+      ]
+    }
+  },
+  "base_frame_10.png": {
+    "image": "base_frame_10.png",
+    "keypoints": {
+      "head": [
+        251,
+        167
+      ],
+      "neck": [
+        252,
+        218
+      ],
+      "left_shoulder": [
+        207,
+        240
+      ],
+      "right_shoulder": [
+        298,
+        233
+      ],
+      "left_elbow": [
+        195,
+        280
+      ],
+      "right_elbow": [
+        316,
+        270
+      ],
+      "left_wrist": [
+        199,
+        299
+      ],
+      "right_wrist": [
+        320,
+        297
+      ],
+      "left_fingertip": [
+        209,
+        307
+      ],
+      "right_fingertip": [
+        306,
+        308
+      ],
+      "left_hip": [
+        237,
+        302
+      ],
+      "right_hip": [
+        275,
+        300
+      ],
+      "left_knee": [
+        235,
+        337
+      ],
+      "right_knee": [
+        280,
+        325
+      ],
+      "left_ankle": [
+        235,
+        370
+      ],
+      "right_ankle": [
+        280,
+        355
+      ],
+      "left_toe": [
+        236,
+        383
+      ],
+      "right_toe": [
+        280,
+        367
+      ]
+    }
+  },
+  "base_frame_11.png": {
+    "image": "base_frame_11.png",
+    "keypoints": {
+      "head": [
+        251,
+        172
+      ],
+      "neck": [
+        252,
+        218
+      ],
+      "left_shoulder": [
+        208,
+        243
+      ],
+      "right_shoulder": [
+        298,
+        233
+      ],
+      "left_elbow": [
+        197,
+        281
+      ],
+      "right_elbow": [
+        315,
+        264
+      ],
+      "left_wrist": [
+        203,
+        296
+      ],
+      "right_wrist": [
+        322,
+        295
+      ],
+      "left_fingertip": [
+        212,
+        303
+      ],
+      "right_fingertip": [
+        307,
+        307
+      ],
+      "left_hip": [
+        237,
+        301
+      ],
+      "right_hip": [
+        275,
+        299
+      ],
+      "left_knee": [
+        233,
+        338
+      ],
+      "right_knee": [
+        277,
+        325
+      ],
+      "left_ankle": [
+        235,
+        368
+      ],
+      "right_ankle": [
+        279,
+        363
+      ],
+      "left_toe": [
+        235,
+        381
+      ],
+      "right_toe": [
+        279,
+        365
+      ]
+    }
+  },
+  "base_frame_12.png": {
+    "image": "base_frame_12.png",
+    "keypoints": {
+      "head": [
+        252,
+        172
+      ],
+      "neck": [
+        254,
+        218
+      ],
+      "left_shoulder": [
+        210,
+        244
+      ],
+      "right_shoulder": [
+        298,
+        234
+      ],
+      "left_elbow": [
+        199,
+        283
+      ],
+      "right_elbow": [
+        318,
+        266
+      ],
+      "left_wrist": [
+        210,
+        294
+      ],
+      "right_wrist": [
+        324,
+        289
+      ],
+      "left_fingertip": [
+        219,
+        298
+      ],
+      "right_fingertip": [
+        310,
+        305
+      ],
+      "left_hip": [
+        239,
+        302
+      ],
+      "right_hip": [
+        274,
+        301
+      ],
+      "left_knee": [
+        235,
+        335
+      ],
+      "right_knee": [
+        278,
+        332
+      ],
+      "left_ankle": [
+        238,
+        359
+      ],
+      "right_ankle": [
+        279,
+        371
+      ],
+      "left_toe": [
+        238,
+        382
+      ],
+      "right_toe": [
+        281,
+        372
+      ]
+    }
+  },
+  "base_frame_13.png": {
+    "image": "base_frame_13.png",
+    "keypoints": {
+      "head": [
+        256,
+        179
+      ],
+      "neck": [
+        256,
+        226
+      ],
+      "left_shoulder": [
+        211,
+        248
+      ],
+      "right_shoulder": [
+        301,
+        241
+      ],
+      "left_elbow": [
+        201,
+        285
+      ],
+      "right_elbow": [
+        317,
+        270
+      ],
+      "left_wrist": [
+        211,
+        294
+      ],
+      "right_wrist": [
+        327,
+        296
+      ],
+      "left_fingertip": [
+        221,
+        297
+      ],
+      "right_fingertip": [
+        312,
+        311
+      ],
+      "left_hip": [
+        240,
+        307
+      ],
+      "right_hip": [
+        278,
+        307
+      ],
+      "left_knee": [
+        235,
+        337
+      ],
+      "right_knee": [
+        279,
+        341
+      ],
+      "left_ankle": [
+        237,
+        348
+      ],
+      "right_ankle": [
+        278,
+        379
+      ],
+      "left_toe": [
+        236,
+        383
+      ],
+      "right_toe": [
+        278,
+        379
+      ]
+    }
+  },
+  "base_frame_14.png": {
+    "image": "base_frame_14.png",
+    "keypoints": {
+      "head": [
+        258,
+        178
+      ],
+      "neck": [
+        259,
+        228
+      ],
+      "left_shoulder": [
+        213,
+        250
+      ],
+      "right_shoulder": [
+        304,
+        244
+      ],
+      "left_elbow": [
+        201,
+        289
+      ],
+      "right_elbow": [
+        321,
+        275
+      ],
+      "left_wrist": [
+        213,
+        298
+      ],
+      "right_wrist": [
+        328,
+        303
+      ],
+      "left_fingertip": [
+        219,
+        303
+      ],
+      "right_fingertip": [
+        314,
+        317
+      ],
+      "left_hip": [
+        242,
+        311
+      ],
+      "right_hip": [
+        278,
+        312
+      ],
+      "left_knee": [
+        235,
+        335
+      ],
+      "right_knee": [
+        281,
+        343
+      ],
+      "left_ankle": [
+        237,
+        342
+      ],
+      "right_ankle": [
+        278,
+        380
+      ],
+      "left_toe": [
+        235,
+        383
+      ],
+      "right_toe": [
+        278,
+        381
+      ]
+    }
+  },
+  "base_frame_15.png": {
+    "image": "base_frame_15.png",
+    "keypoints": {
+      "head": [
+        263,
+        176
+      ],
+      "neck": [
+        262,
+        222
+      ],
+      "left_shoulder": [
+        218,
+        244
+      ],
+      "right_shoulder": [
+        306,
+        242
+      ],
+      "left_elbow": [
+        203,
+        280
+      ],
+      "right_elbow": [
+        321,
+        277
+      ],
+      "left_wrist": [
+        203,
+        300
+      ],
+      "right_wrist": [
+        326,
+        305
+      ],
+      "left_fingertip": [
+        213,
+        309
+      ],
+      "right_fingertip": [
+        310,
+        317
+      ],
+      "left_hip": [
+        243,
+        307
+      ],
+      "right_hip": [
+        280,
+        306
+      ],
+      "left_knee": [
+        237,
+        325
+      ],
+      "right_knee": [
+        281,
+        336
+      ],
+      "left_ankle": [
+        237,
+        336
+      ],
+      "right_ankle": [
+        278,
+        375
+      ],
+      "left_toe": [
+        235,
+        372
+      ],
+      "right_toe": [
+        279,
+        381
+      ]
+    }
+  },
+  "base_frame_16.png": {
+    "image": "base_frame_16.png",
+    "keypoints": {
+      "head": [
+        264,
+        164
+      ],
+      "neck": [
+        264,
+        216
+      ],
+      "left_shoulder": [
+        219,
+        234
+      ],
+      "right_shoulder": [
+        309,
+        238
+      ],
+      "left_elbow": [
+        202,
+        271
+      ],
+      "right_elbow": [
+        321,
+        277
+      ],
+      "left_wrist": [
+        196,
+        295
+      ],
+      "right_wrist": [
+        321,
+        302
+      ],
+      "left_fingertip": [
+        205,
+        306
+      ],
+      "right_fingertip": [
+        308,
+        311
+      ],
+      "left_hip": [
+        243,
+        303
+      ],
+      "right_hip": [
+        280,
+        303
+      ],
+      "left_knee": [
+        235,
+        325
+      ],
+      "right_knee": [
+        281,
+        337
+      ],
+      "left_ankle": [
+        237,
+        349
+      ],
+      "right_ankle": [
+        280,
+        367
+      ],
+      "left_toe": [
+        235,
+        367
+      ],
+      "right_toe": [
+        280,
+        381
+      ]
+    }
+  },
+  "base_frame_17.png": {
+    "image": "base_frame_17.png",
+    "keypoints": {
+      "head": [
+        263,
+        168
+      ],
+      "neck": [
+        262,
+        218
+      ],
+      "left_shoulder": [
+        217,
+        234
+      ],
+      "right_shoulder": [
+        308,
+        239
+      ],
+      "left_elbow": [
+        201,
+        267
+      ],
+      "right_elbow": [
+        321,
+        279
+      ],
+      "left_wrist": [
+        194,
+        292
+      ],
+      "right_wrist": [
+        321,
+        299
+      ],
+      "left_fingertip": [
+        203,
+        306
+      ],
+      "right_fingertip": [
+        306,
+        308
+      ],
+      "left_hip": [
+        241,
+        302
+      ],
+      "right_hip": [
+        280,
+        302
+      ],
+      "left_knee": [
+        236,
+        325
+      ],
+      "right_knee": [
+        281,
+        333
+      ],
+      "left_ankle": [
+        237,
+        365
+      ],
+      "right_ankle": [
+        280,
+        356
+      ],
+      "left_toe": [
+        235,
+        368
+      ],
+      "right_toe": [
+        279,
+        381
+      ]
+    }
+  },
+  "base_frame_18.png": {
+    "image": "base_frame_18.png",
+    "keypoints": {
+      "head": [
+        261,
+        166
+      ],
+      "neck": [
+        262,
+        219
+      ],
+      "left_shoulder": [
+        217,
+        236
+      ],
+      "right_shoulder": [
+        308,
+        242
+      ],
+      "left_elbow": [
+        199,
+        268
+      ],
+      "right_elbow": [
+        320,
+        275
+      ],
+      "left_wrist": [
+        191,
+        292
+      ],
+      "right_wrist": [
+        318,
+        300
+      ],
+      "left_fingertip": [
+        202,
+        307
+      ],
+      "right_fingertip": [
+        304,
+        307
+      ],
+      "left_hip": [
+        243,
+        305
+      ],
+      "right_hip": [
+        280,
+        306
+      ],
+      "left_knee": [
+        237,
+        330
+      ],
+      "right_knee": [
+        281,
+        333
+      ],
+      "left_ankle": [
+        235,
+        374
+      ],
+      "right_ankle": [
+        280,
+        350
+      ],
+      "left_toe": [
+        235,
+        375
+      ],
+      "right_toe": [
+        279,
+        382
+      ]
+    }
+  },
+  "base_frame_19.png": {
+    "image": "base_frame_19.png",
+    "keypoints": {
+      "head": [
+        260,
+        168
+      ],
+      "neck": [
+        261,
+        220
+      ],
+      "left_shoulder": [
+        216,
+        238
+      ],
+      "right_shoulder": [
+        307,
+        244
+      ],
+      "left_elbow": [
+        199,
+        270
+      ],
+      "right_elbow": [
+        318,
+        281
+      ],
+      "left_wrist": [
+        192,
+        291
+      ],
+      "right_wrist": [
+        316,
+        301
+      ],
+      "left_fingertip": [
+        202,
+        308
+      ],
+      "right_fingertip": [
+        303,
+        306
+      ],
+      "left_hip": [
+        243,
+        306
+      ],
+      "right_hip": [
+        279,
+        307
+      ],
+      "left_knee": [
+        236,
+        331
+      ],
+      "right_knee": [
+        284,
+        331
+      ],
+      "left_ankle": [
+        236,
+        374
+      ],
+      "right_ankle": [
+        280,
+        346
+      ],
+      "left_toe": [
+        235,
+        376
+      ],
+      "right_toe": [
+        280,
+        381
+      ]
+    }
+  },
+  "base_frame_20.png": {
+    "image": "base_frame_20.png",
+    "keypoints": {
+      "head": [
+        256,
+        173
+      ],
+      "neck": [
+        257,
+        224
+      ],
+      "left_shoulder": [
+        214,
+        244
+      ],
+      "right_shoulder": [
+        304,
+        247
+      ],
+      "left_elbow": [
+        199,
+        275
+      ],
+      "right_elbow": [
+        316,
+        278
+      ],
+      "left_wrist": [
+        190,
+        298
+      ],
+      "right_wrist": [
+        316,
+        303
+      ],
+      "left_fingertip": [
+        198,
+        315
+      ],
+      "right_fingertip": [
+        304,
+        312
+      ],
+      "left_hip": [
+        243,
+        311
+      ],
+      "right_hip": [
+        277,
+        309
+      ],
+      "left_knee": [
+        235,
+        342
+      ],
+      "right_knee": [
+        280,
+        335
+      ],
+      "left_ankle": [
+        235,
+        381
+      ],
+      "right_ankle": [
+        280,
+        337
+      ],
+      "left_toe": [
+        235,
+        380
+      ],
+      "right_toe": [
+        280,
+        377
+      ]
+    }
+  },
+  "base_frame_21.png": {
+    "image": "base_frame_21.png",
+    "keypoints": {
+      "head": [
+        256,
+        172
+      ],
+      "neck": [
+        257,
+        224
+      ],
+      "left_shoulder": [
+        211,
+        246
+      ],
+      "right_shoulder": [
+        303,
+        245
+      ],
+      "left_elbow": [
+        197,
+        280
+      ],
+      "right_elbow": [
+        316,
+        285
+      ],
+      "left_wrist": [
+        189,
+        306
+      ],
+      "right_wrist": [
+        316,
+        306
+      ],
+      "left_fingertip": [
+        201,
+        320
+      ],
+      "right_fingertip": [
+        304,
+        316
+      ],
+      "left_hip": [
+        240,
+        309
+      ],
+      "right_hip": [
+        276,
+        308
+      ],
+      "left_knee": [
+        236,
+        339
+      ],
+      "right_knee": [
+        282,
+        331
+      ],
+      "left_ankle": [
+        236,
+        381
+      ],
+      "right_ankle": [
+        281,
+        333
+      ],
+      "left_toe": [
+        236,
+        382
+      ],
+      "right_toe": [
+        282,
+        375
+      ]
+    }
+  },
+  "base_frame_22.png": {
+    "image": "base_frame_22.png",
+    "keypoints": {
+      "head": [
+        250,
+        168
+      ],
+      "neck": [
+        252,
+        218
+      ],
+      "left_shoulder": [
+        207,
+        242
+      ],
+      "right_shoulder": [
+        299,
+        234
+      ],
+      "left_elbow": [
+        196,
+        282
+      ],
+      "right_elbow": [
+        314,
+        272
+      ],
+      "left_wrist": [
+        197,
+        303
+      ],
+      "right_wrist": [
+        322,
+        300
+      ],
+      "left_fingertip": [
+        207,
+        311
+      ],
+      "right_fingertip": [
+        308,
+        309
+      ],
+      "left_hip": [
+        237,
+        304
+      ],
+      "right_hip": [
+        273,
+        303
+      ],
+      "left_knee": [
+        235,
+        338
+      ],
+      "right_knee": [
+        278,
+        325
+      ],
+      "left_ankle": [
+        238,
+        373
+      ],
+      "right_ankle": [
+        280,
+        353
+      ],
+      "left_toe": [
+        237,
+        382
+      ],
+      "right_toe": [
+        280,
+        369
+      ]
+    }
+  },
+  "base_frame_23.png": {
+    "image": "base_frame_23.png",
+    "keypoints": {
+      "head": [
+        249,
+        164
+      ],
+      "neck": [
+        251,
+        218
+      ],
+      "left_shoulder": [
+        209,
+        238
+      ],
+      "right_shoulder": [
+        300,
+        232
+      ],
+      "left_elbow": [
+        197,
+        280
+      ],
+      "right_elbow": [
+        316,
+        271
+      ],
+      "left_wrist": [
+        200,
+        301
+      ],
+      "right_wrist": [
+        322,
+        295
+      ],
+      "left_fingertip": [
+        211,
+        307
+      ],
+      "right_fingertip": [
+        310,
+        308
+      ],
+      "left_hip": [
+        237,
+        301
+      ],
+      "right_hip": [
+        275,
+        301
+      ],
+      "left_knee": [
+        233,
+        339
+      ],
+      "right_knee": [
+        278,
+        327
+      ],
+      "left_ankle": [
+        237,
+        370
+      ],
+      "right_ankle": [
+        280,
+        359
+      ],
+      "left_toe": [
+        237,
+        383
+      ],
+      "right_toe": [
+        279,
+        366
+      ]
+    }
+  },
+  "base_frame_24.png": {
+    "image": "base_frame_24.png",
+    "keypoints": {
+      "head": [
+        250,
+        164
+      ],
+      "neck": [
+        253,
+        216
+      ],
+      "left_shoulder": [
+        207,
+        242
+      ],
+      "right_shoulder": [
+        298,
+        233
+      ],
+      "left_elbow": [
+        197,
+        283
+      ],
+      "right_elbow": [
+        317,
+        265
+      ],
+      "left_wrist": [
+        204,
+        297
+      ],
+      "right_wrist": [
+        326,
+        292
+      ],
+      "left_fingertip": [
+        215,
+        301
+      ],
+      "right_fingertip": [
+        309,
+        307
+      ],
+      "left_hip": [
+        238,
+        301
+      ],
+      "right_hip": [
+        272,
+        301
+      ],
+      "left_knee": [
+        235,
+        335
+      ],
+      "right_knee": [
+        277,
+        329
+      ],
+      "left_ankle": [
+        237,
+        363
+      ],
+      "right_ankle": [
+        278,
+        367
+      ],
+      "left_toe": [
+        235,
+        383
+      ],
+      "right_toe": [
+        278,
+        369
+      ]
+    }
+  },
+  "clothed_frame_00.png": {
+    "image": "clothed_frame_00.png",
+    "keypoints": {
+      "head": [
+        251,
+        174
+      ],
+      "neck": [
+        251,
+        225
+      ],
+      "left_shoulder": [
+        211,
+        240
+      ],
+      "right_shoulder": [
+        295,
+        234
+      ],
+      "left_elbow": [
+        197,
+        286
+      ],
+      "right_elbow": [
+        315,
+        266
+      ],
+      "left_wrist": [
+        212,
+        297
+      ],
+      "right_wrist": [
+        323,
+        294
+      ],
+      "left_fingertip": [
+        218,
+        302
+      ],
+      "right_fingertip": [
+        313,
+        310
+      ],
+      "left_hip": [
+        237,
+        314
+      ],
+      "right_hip": [
+        276,
+        315
+      ],
+      "left_knee": [
+        238,
+        348
+      ],
+      "right_knee": [
+        276,
+        339
+      ],
+      "left_ankle": [
+        239,
+        389
+      ],
+      "right_ankle": [
+        277,
+        371
+      ],
+      "left_toe": [
+        239,
+        389
+      ],
+      "right_toe": [
+        277,
+        373
+      ]
+    }
+  },
+  "clothed_frame_01.png": {
+    "image": "clothed_frame_01.png",
+    "keypoints": {
+      "head": [
+        253,
+        182
+      ],
+      "neck": [
+        254,
+        229
+      ],
+      "left_shoulder": [
+        211,
+        243
+      ],
+      "right_shoulder": [
+        298,
+        236
+      ],
+      "left_elbow": [
+        199,
+        289
+      ],
+      "right_elbow": [
+        320,
+        269
+      ],
+      "left_wrist": [
+        213,
+        299
+      ],
+      "right_wrist": [
+        326,
+        299
+      ],
+      "left_fingertip": [
+        220,
+        303
+      ],
+      "right_fingertip": [
+        315,
+        315
+      ],
+      "left_hip": [
+        239,
+        316
+      ],
+      "right_hip": [
+        276,
+        317
+      ],
+      "left_knee": [
+        239,
+        350
+      ],
+      "right_knee": [
+        278,
+        344
+      ],
+      "left_ankle": [
+        240,
+        370
+      ],
+      "right_ankle": [
+        276,
+        377
+      ],
+      "left_toe": [
+        237,
+        389
+      ],
+      "right_toe": [
+        276,
+        379
+      ]
+    }
+  }
+}

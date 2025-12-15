@@ -1,0 +1,7 @@
+{
+  "scale_factor": 0.950440251572327,
+  "frame_mappings": {
+    "clothed_frame_00": "base_frame_11",
+    "clothed_frame_01": "base_frame_13"
+  }
+}

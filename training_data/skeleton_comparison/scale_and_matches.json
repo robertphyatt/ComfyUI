@@ -1,0 +1,13 @@
+{
+  "scale_factor": 0.9589854964520691,
+  "matches": {
+    "clothed_frame_00": {
+      "base_frame": "base_frame_00",
+      "distance": 11.526767820406016
+    },
+    "clothed_frame_01": {
+      "base_frame": "base_frame_00",
+      "distance": 9.741192797691046
+    }
+  }
+}
