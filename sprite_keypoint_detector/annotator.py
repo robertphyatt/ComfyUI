@@ -16,12 +16,13 @@ from .keypoints import KEYPOINT_NAMES, NUM_KEYPOINTS, SKELETON_CONNECTIONS, SKEL
 class KeypointAnnotator:
     """Interactive GUI for annotating keypoints on sprite images."""
 
-    def __init__(self, image_path: Path, existing_keypoints: Optional[Dict] = None):
+    def __init__(self, image_path: Path, existing_keypoints: Optional[Dict] = None, auto_predictions: Optional[Dict] = None):
         """Initialize annotator.
 
         Args:
             image_path: Path to sprite image
             existing_keypoints: Optional dict of existing keypoint annotations
+            auto_predictions: Optional dict of AI-predicted keypoints (shown as ghosts)
         """
         self.image_path = Path(image_path)
         self.image = np.array(Image.open(image_path).convert('RGBA'))
@@ -29,11 +30,37 @@ class KeypointAnnotator:
         # Initialize keypoints: None means not yet annotated
         self.keypoints: List[Optional[Tuple[int, int]]] = [None] * NUM_KEYPOINTS
 
+        # Track source of each keypoint: "none", "auto", or "manual"
+        self.keypoint_sources: List[str] = ["none"] * NUM_KEYPOINTS
+
+        # Store auto predictions for ghost overlay
+        self.auto_predictions: List[Optional[Tuple[int, int]]] = [None] * NUM_KEYPOINTS
+
+        # Load auto predictions if provided
+        if auto_predictions:
+            for i, name in enumerate(KEYPOINT_NAMES):
+                if name in auto_predictions:
+                    pred = auto_predictions[name]
+                    if isinstance(pred, dict):
+                        # Format: {x: int, y: int, confidence: float}
+                        self.auto_predictions[i] = (pred["x"], pred["y"])
+                    elif isinstance(pred, (list, tuple)):
+                        # Format: [x, y] or (x, y)
+                        self.auto_predictions[i] = tuple(pred[:2])
+
         # Load existing keypoints if provided
         if existing_keypoints:
             for i, name in enumerate(KEYPOINT_NAMES):
                 if name in existing_keypoints:
-                    self.keypoints[i] = tuple(existing_keypoints[name])
+                    kp = existing_keypoints[name]
+                    if isinstance(kp, dict):
+                        # New format: {x: int, y: int, source: str, confidence: float}
+                        self.keypoints[i] = (kp["x"], kp["y"])
+                        self.keypoint_sources[i] = kp.get("source", "manual")
+                    elif isinstance(kp, (list, tuple)):
+                        # Legacy format: [x, y] or (x, y)
+                        self.keypoints[i] = tuple(kp[:2])
+                        self.keypoint_sources[i] = "manual"  # Assume legacy annotations are manual
 
         self.current_keypoint_idx = 0
         self.point_artists = []
@@ -80,7 +107,8 @@ class KeypointAnnotator:
 
         # Instructions
         self.fig.text(0.5, 0.97,
-            'Click to place keypoint | Arrow keys or buttons to navigate | S to save | Q to quit',
+            'Click to place keypoint | A to accept ghost | Arrow keys to navigate | S to save | Q to quit\n'
+            'Colors: Yellow ghost=AI prediction | Green=manual | Orange=auto-accepted | Lime=current',
             ha='center', va='top', fontsize=9, color='gray')
 
     def _get_title(self) -> str:
@@ -98,6 +126,16 @@ class KeypointAnnotator:
         self.point_artists = []
         self.line_artists = []
 
+        # Draw ghost predictions first (for keypoints not yet set)
+        for i, pred in enumerate(self.auto_predictions):
+            if pred is not None and self.keypoints[i] is None:
+                # Draw ghost as faded yellow
+                size = 100 if i == self.current_keypoint_idx else 50
+                point = self.ax.scatter(pred[0], pred[1], c='yellow', s=size,
+                                        marker='o', edgecolors='orange', linewidths=1,
+                                        alpha=0.3, zorder=5)
+                self.point_artists.append(point)
+
         # Draw skeleton lines
         for (i, j), color in zip(SKELETON_CONNECTIONS, SKELETON_COLORS):
             if self.keypoints[i] is not None and self.keypoints[j] is not None:
@@ -108,18 +146,31 @@ class KeypointAnnotator:
                 line, = self.ax.plot(x, y, '-', color=rgb, linewidth=2, alpha=0.8)
                 self.line_artists.append(line)
 
-        # Draw keypoints
+        # Draw keypoints (colored by source)
         for i, kp in enumerate(self.keypoints):
             if kp is not None:
-                color = 'lime' if i == self.current_keypoint_idx else 'cyan'
-                size = 120 if i == self.current_keypoint_idx else 60
+                # Color by source
+                source = self.keypoint_sources[i]
+                is_current = (i == self.current_keypoint_idx)
+
+                if is_current:
+                    color = 'lime'  # Current keypoint is always lime
+                elif source == "manual":
+                    color = 'green'  # Manual annotations are green
+                elif source == "auto":
+                    color = 'orange'  # Accepted auto predictions are orange
+                else:
+                    color = 'cyan'  # Fallback
+
+                size = 120 if is_current else 60
                 point = self.ax.scatter(kp[0], kp[1], c=color, s=size,
                                         marker='o', edgecolors='white', linewidths=1, zorder=10)
                 self.point_artists.append(point)
 
                 # Add label for current keypoint
-                if i == self.current_keypoint_idx:
-                    text = self.ax.text(kp[0] + 10, kp[1] - 10, KEYPOINT_NAMES[i],
+                if is_current:
+                    label_text = f"{KEYPOINT_NAMES[i]} ({source})"
+                    text = self.ax.text(kp[0] + 10, kp[1] - 10, label_text,
                                        fontsize=8, color='white',
                                        bbox=dict(boxstyle='round', facecolor='black', alpha=0.7))
                     self.point_artists.append(text)
@@ -135,6 +186,7 @@ class KeypointAnnotator:
 
         x, y = int(round(event.xdata)), int(round(event.ydata))
         self.keypoints[self.current_keypoint_idx] = (x, y)
+        self.keypoint_sources[self.current_keypoint_idx] = "manual"
 
         # Auto-advance to next unset keypoint
         self._advance_to_next_unset()
@@ -152,12 +204,28 @@ class KeypointAnnotator:
         # All set, stay at current + 1 (or wrap)
         self.current_keypoint_idx = (start + 1) % NUM_KEYPOINTS
 
+    def _accept_ghost(self):
+        """Accept ghost prediction for current keypoint."""
+        idx = self.current_keypoint_idx
+        if self.auto_predictions[idx] is not None:
+            self.keypoints[idx] = self.auto_predictions[idx]
+            self.keypoint_sources[idx] = "auto"
+
+            # Auto-advance to next unset keypoint
+            self._advance_to_next_unset()
+
+            self.ax.set_title(self._get_title())
+            self._draw_skeleton()
+
     def _on_key(self, event):
         """Handle keyboard input."""
         if event.key == 'right' or event.key == 'down':
             self.current_keypoint_idx = (self.current_keypoint_idx + 1) % NUM_KEYPOINTS
         elif event.key == 'left' or event.key == 'up':
             self.current_keypoint_idx = (self.current_keypoint_idx - 1) % NUM_KEYPOINTS
+        elif event.key == 'a':
+            self._accept_ghost()
+            return
         elif event.key == 's':
             self._on_save(None)
             return
@@ -199,22 +267,27 @@ class KeypointAnnotator:
         self.ax.set_title(self._get_title())
         self._draw_skeleton()
 
-    def run(self) -> Optional[Dict[str, List[int]]]:
+    def run(self) -> Optional[Dict]:
         """Run the annotator and return keypoints if saved.
 
         Returns:
-            Dict mapping keypoint names to [x, y] coordinates, or None if skipped
+            Dict mapping keypoint names to {x, y, source, confidence} dicts, or None if skipped
         """
         plt.show()
 
         if not self.saved:
             return None
 
-        # Convert to dict format
+        # Convert to dict format with metadata
         result = {}
         for i, name in enumerate(KEYPOINT_NAMES):
             if self.keypoints[i] is not None:
-                result[name] = list(self.keypoints[i])
+                result[name] = {
+                    "x": int(self.keypoints[i][0]),
+                    "y": int(self.keypoints[i][1]),
+                    "source": self.keypoint_sources[i],
+                    "confidence": 1.0  # User-verified annotations have confidence 1.0
+                }
 
         return result
 
