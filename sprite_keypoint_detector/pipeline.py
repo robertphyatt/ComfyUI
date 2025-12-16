@@ -69,6 +69,9 @@ def create_debug_comparison(debug_dir: Path, frame_idx: int) -> np.ndarray:
         path = debug_dir / folder / f"frame_{frame_idx:02d}.png"
         if path.exists():
             img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+            if img is None:
+                print(f"Warning: Failed to load debug image {path}")
+                continue
             # Convert to BGRA if needed
             if len(img.shape) == 2:
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGRA)
@@ -170,6 +173,9 @@ class ClothingPipeline:
 
             self.base_frames = load_frames_from_directory(frames_dir, "base_frame")
             self.reference_frames = load_frames_from_directory(frames_dir, "clothed_frame")
+
+            if len(self.base_frames) != len(self.reference_frames):
+                raise ValueError(f"Frame count mismatch: {len(self.base_frames)} base frames vs {len(self.reference_frames)} clothed frames")
 
             print(f"Loaded {len(self.base_frames)} base frames, {len(self.reference_frames)} reference frames")
 
@@ -451,12 +457,10 @@ def main():
     )
 
     # Input mode: either spritesheets or frame directory
-    input_group = parser.add_mutually_exclusive_group(required=True)
-    input_group.add_argument("--frames-dir", type=Path,
-                             help="Directory containing base_frame_XX.png and clothed_frame_XX.png")
-    input_group.add_argument("--base", type=Path,
-                             help="Base mannequin spritesheet (requires --reference)")
-
+    parser.add_argument("--frames-dir", type=Path,
+                       help="Directory containing base_frame_XX.png and clothed_frame_XX.png")
+    parser.add_argument("--base", type=Path,
+                       help="Base mannequin spritesheet (requires --reference)")
     parser.add_argument("--reference", type=Path,
                        help="Clothed reference spritesheet (required with --base)")
     parser.add_argument("--annotations", type=Path, required=True,
@@ -476,9 +480,11 @@ def main():
 
     args = parser.parse_args()
 
-    # Validate spritesheet mode has both arguments
-    if args.base is not None and args.reference is None:
-        parser.error("--base requires --reference")
+    # Validate input mode: either frames-dir OR both base+reference
+    if args.frames_dir is None and (args.base is None or args.reference is None):
+        parser.error("Must provide either --frames-dir OR both --base and --reference")
+    if args.frames_dir is not None and (args.base is not None or args.reference is not None):
+        parser.error("Cannot use --frames-dir with --base/--reference")
 
     config = TransformConfig(
         scale_factor=args.scale,
