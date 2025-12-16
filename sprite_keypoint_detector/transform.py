@@ -19,6 +19,7 @@ class TransformConfig:
     edge_width: int = 2
     pixelize_factor: int = 3
     canvas_size: int = 512
+    skip_rotation: bool = False  # Skip rotation step entirely (for good fits)
 
 
 # Limb chains for rotation (joint_idx, child_idx, name)
@@ -360,6 +361,88 @@ def apply_pixelize(image: np.ndarray, factor: int) -> np.ndarray:
 
 # ============ Full Pipeline ============
 
+@dataclass
+class TransformDebugOutput:
+    """Debug outputs from transform pipeline."""
+    aligned_clothed: np.ndarray       # After scale + align
+    aligned_kpts: np.ndarray          # Keypoints after scale + align
+    armor_masked: np.ndarray          # After applying mask
+    rotated_armor: np.ndarray         # After rotation
+    rotated_kpts: np.ndarray          # Keypoints after rotation
+    inpainted_armor: np.ndarray       # After inpaint
+    final_armor: np.ndarray           # After pixelize
+    overlap_viz: np.ndarray           # Blue/red/green overlap visualization
+    skeleton_viz: np.ndarray          # Skeleton overlay
+
+
+def _draw_skeleton_on_image(
+    image: np.ndarray,
+    keypoints: np.ndarray,
+    color: Tuple[int, int, int] = (0, 255, 0),
+    thickness: int = 2,
+    point_radius: int = 4
+) -> np.ndarray:
+    """Draw skeleton on image."""
+    from .keypoints import SKELETON_CONNECTIONS
+
+    result = image.copy()
+    if result.shape[2] == 4:
+        # Convert RGBA to RGB for drawing
+        rgb = result[:, :, :3].copy()
+    else:
+        rgb = result.copy()
+
+    # Draw bones
+    for i, j in SKELETON_CONNECTIONS:
+        pt1 = (int(keypoints[i, 0]), int(keypoints[i, 1]))
+        pt2 = (int(keypoints[j, 0]), int(keypoints[j, 1]))
+        cv2.line(rgb, pt1, pt2, color, thickness)
+
+    # Draw points
+    for i in range(len(keypoints)):
+        pt = (int(keypoints[i, 0]), int(keypoints[i, 1]))
+        cv2.circle(rgb, pt, point_radius, color, -1)
+        cv2.circle(rgb, pt, point_radius, (255, 255, 255), 1)
+
+    return rgb
+
+
+def _create_overlap_visualization(
+    base_image: np.ndarray,
+    armor_image: np.ndarray,
+    neck_y: int
+) -> np.ndarray:
+    """Create blue/red/green overlap visualization.
+
+    - Green: armor covering base (good)
+    - Blue: base not covered by armor (uncovered)
+    - Red: armor not over base (floating)
+    """
+    h, w = base_image.shape[:2]
+    viz = np.zeros((h, w, 3), dtype=np.uint8)
+
+    base_visible = base_image[:, :, 3] > 128
+    armor_visible = armor_image[:, :, 3] > 128
+
+    # Only consider below neck
+    valid_region = np.zeros((h, w), dtype=bool)
+    valid_region[neck_y:, :] = True
+
+    # Green: armor covers base
+    covered = base_visible & armor_visible & valid_region
+    viz[covered] = [0, 255, 0]
+
+    # Blue: base not covered by armor
+    uncovered = base_visible & ~armor_visible & valid_region
+    viz[uncovered] = [255, 0, 0]  # BGR so this is blue
+
+    # Red: floating armor (armor but no base)
+    floating = ~base_visible & armor_visible & valid_region
+    viz[floating] = [0, 0, 255]  # BGR so this is red
+
+    return viz
+
+
 def transform_frame(
     clothed_image: np.ndarray,
     clothed_kpts: np.ndarray,
@@ -399,8 +482,11 @@ def transform_frame(
     # Extract armor
     armor = apply_mask(aligned_clothed, scaled_mask)
 
-    # Step 2: Rotate
-    rotated_armor, rotated_kpts = apply_rotation(armor, aligned_kpts, base_kpts, config)
+    # Step 2: Rotate (skip if fit is already good)
+    if config.skip_rotation:
+        rotated_armor, rotated_kpts = armor, aligned_kpts
+    else:
+        rotated_armor, rotated_kpts = apply_rotation(armor, aligned_kpts, base_kpts, config)
 
     # Step 3: Inpaint
     inpainted_armor = apply_inpaint(
@@ -412,3 +498,70 @@ def transform_frame(
     final_armor = apply_pixelize(inpainted_armor, config.pixelize_factor)
 
     return final_armor
+
+
+def transform_frame_debug(
+    clothed_image: np.ndarray,
+    clothed_kpts: np.ndarray,
+    base_image: np.ndarray,
+    base_kpts: np.ndarray,
+    armor_mask: np.ndarray,
+    config: Optional[TransformConfig] = None
+) -> TransformDebugOutput:
+    """Run full transform pipeline with debug outputs.
+
+    Same as transform_frame but returns all intermediate steps.
+    """
+    if config is None:
+        config = TransformConfig()
+
+    # Step 1: Scale and align
+    aligned_clothed, aligned_kpts = scale_and_align(
+        clothed_image, clothed_kpts, base_kpts, config
+    )
+
+    # Scale mask the same way
+    mask_rgba = np.zeros((*armor_mask.shape, 4), dtype=np.uint8)
+    mask_rgba[:, :, 0] = armor_mask
+    mask_rgba[:, :, 3] = armor_mask
+    aligned_mask, _ = scale_and_align(mask_rgba, clothed_kpts, base_kpts, config)
+    scaled_mask = aligned_mask[:, :, 0]
+
+    # Extract armor
+    armor_masked = apply_mask(aligned_clothed, scaled_mask)
+
+    # Step 2: Rotate (skip if fit is already good)
+    if config.skip_rotation:
+        rotated_armor, rotated_kpts = armor_masked, aligned_kpts
+    else:
+        rotated_armor, rotated_kpts = apply_rotation(armor_masked, aligned_kpts, base_kpts, config)
+
+    # Step 3: Inpaint
+    inpainted_armor = apply_inpaint(
+        rotated_armor, aligned_clothed, base_image,
+        rotated_kpts, base_kpts, scaled_mask, config
+    )
+
+    # Step 4: Pixelize
+    final_armor = apply_pixelize(inpainted_armor, config.pixelize_factor)
+
+    # Create visualizations
+    neck_y = int(base_kpts[1, 1])
+    overlap_viz = _create_overlap_visualization(base_image, final_armor, neck_y)
+
+    # Skeleton visualization: base skeleton (green) + armor skeleton (red) on base image
+    skeleton_viz = base_image[:, :, :3].copy()
+    skeleton_viz = _draw_skeleton_on_image(skeleton_viz, base_kpts, color=(0, 255, 0), thickness=2)
+    skeleton_viz = _draw_skeleton_on_image(skeleton_viz, rotated_kpts, color=(0, 0, 255), thickness=1)
+
+    return TransformDebugOutput(
+        aligned_clothed=aligned_clothed,
+        aligned_kpts=aligned_kpts,
+        armor_masked=armor_masked,
+        rotated_armor=rotated_armor,
+        rotated_kpts=rotated_kpts,
+        inpainted_armor=inpainted_armor,
+        final_armor=final_armor,
+        overlap_viz=overlap_viz,
+        skeleton_viz=skeleton_viz
+    )

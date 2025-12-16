@@ -356,12 +356,29 @@ class ClothingPipeline:
             if len(mask.shape) == 3:
                 mask = mask[:, :, 0]
 
+            # Skip rotation if same-index frame is matched (poses should be identical)
+            # Rotation only helps when poses differ significantly
+            skip_rotation = (base_idx == clothed_idx)
+
+            # Create per-frame config
+            frame_config = TransformConfig(
+                scale_factor=self.config.scale_factor,
+                rotation_segment_width=self.config.rotation_segment_width,
+                edge_width=self.config.edge_width,
+                pixelize_factor=self.config.pixelize_factor,
+                canvas_size=self.config.canvas_size,
+                skip_rotation=skip_rotation
+            )
+
+            if skip_rotation:
+                print(f"    (skipping rotation - same pose index)")
+
             if debug:
                 # Use debug transform to get all intermediate steps
                 debug_output = transform_frame_debug(
                     clothed_frame, clothed_kpts,
                     base_frame, base_kpts,
-                    mask, self.config
+                    mask, frame_config
                 )
 
                 # Save intermediate outputs
@@ -379,7 +396,7 @@ class ClothingPipeline:
                 transformed = transform_frame(
                     clothed_frame, clothed_kpts,
                     base_frame, base_kpts,
-                    mask, self.config
+                    mask, frame_config
                 )
                 clothing_frames.append(transformed)
 
