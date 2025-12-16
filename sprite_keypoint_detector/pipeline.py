@@ -1,10 +1,28 @@
 """Main clothing spritesheet pipeline.
 
-Usage:
+Usage with spritesheets:
     python -m sprite_keypoint_detector.pipeline \
         --base base_spritesheet.png \
         --reference clothed_spritesheet.png \
+        --annotations annotations.json \
+        --masks masks/ \
         --output output_dir/
+
+Usage with frame directories:
+    python -m sprite_keypoint_detector.pipeline \
+        --frames-dir frames/ \
+        --annotations annotations.json \
+        --masks masks/ \
+        --output output_dir/
+
+Frame directory structure:
+    frames/
+        base_frame_00.png
+        base_frame_01.png
+        ...
+        clothed_frame_00.png
+        clothed_frame_01.png
+        ...
 """
 
 import argparse
@@ -13,11 +31,12 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import json
+import re
 
 from .annotations import load_annotations, save_annotations, get_coords_array
 from .validation import validate_all_annotations, ValidationResult
 from .matching import find_top_candidates, score_candidate_after_transform, select_best_match, MatchCandidate, FrameMatch
-from .transform import transform_frame, get_keypoints_array, TransformConfig
+from .transform import transform_frame, transform_frame_debug, get_keypoints_array, TransformConfig, TransformDebugOutput
 from .spritesheet import (
     detect_layout, split_spritesheet, assemble_spritesheet,
     save_frames, composite_overlay, SpritesheetLayout
@@ -25,20 +44,112 @@ from .spritesheet import (
 from .keypoints import KEYPOINT_NAMES
 
 
+def create_debug_comparison(debug_dir: Path, frame_idx: int) -> np.ndarray:
+    """Create a side-by-side comparison of all debug steps for a frame.
+
+    Args:
+        debug_dir: Debug output directory
+        frame_idx: Frame index
+
+    Returns:
+        Composite image with all steps side by side, labeled
+    """
+    steps = [
+        ("1_aligned", "Aligned"),
+        ("2_masked", "Masked"),
+        ("3_rotated", "Rotated"),
+        ("4_inpainted", "Inpainted"),
+        ("5_final", "Final"),
+        ("overlap", "Overlap"),
+        ("skeleton", "Skeleton"),
+    ]
+
+    images = []
+    for folder, label in steps:
+        path = debug_dir / folder / f"frame_{frame_idx:02d}.png"
+        if path.exists():
+            img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+            # Convert to BGRA if needed
+            if len(img.shape) == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGRA)
+            elif img.shape[2] == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+
+            # Add label at top
+            label_height = 30
+            labeled = np.zeros((img.shape[0] + label_height, img.shape[1], 4), dtype=np.uint8)
+            labeled[:, :] = [40, 40, 40, 255]  # Dark gray background
+            labeled[label_height:, :] = img
+
+            # Draw label text
+            cv2.putText(labeled, label, (10, 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255, 255), 1)
+
+            images.append(labeled)
+
+    if not images:
+        return None
+
+    # Stack horizontally
+    return np.hstack(images)
+
+
+def load_frames_from_directory(frames_dir: Path, prefix: str) -> List[np.ndarray]:
+    """Load frames from directory matching pattern prefix_XX.png.
+
+    Args:
+        frames_dir: Directory containing frame images
+        prefix: Prefix to match (e.g., 'base_frame' or 'clothed_frame')
+
+    Returns:
+        List of frames sorted by index
+    """
+    pattern = re.compile(rf"{prefix}_(\d+)\.png$")
+    frame_files = []
+
+    for f in frames_dir.iterdir():
+        match = pattern.match(f.name)
+        if match:
+            idx = int(match.group(1))
+            frame_files.append((idx, f))
+
+    # Sort by index
+    frame_files.sort(key=lambda x: x[0])
+
+    frames = []
+    for idx, path in frame_files:
+        frame = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+        if frame is None:
+            raise ValueError(f"Failed to load frame: {path}")
+        frames.append(frame)
+
+    return frames
+
+
 class ClothingPipeline:
     """Main pipeline for generating clothing spritesheets."""
 
     def __init__(
         self,
-        base_spritesheet_path: Path,
-        reference_spritesheet_path: Path,
         annotations_path: Path,
         masks_dir: Path,
         output_dir: Path,
-        config: Optional[TransformConfig] = None
+        config: Optional[TransformConfig] = None,
+        base_spritesheet_path: Optional[Path] = None,
+        reference_spritesheet_path: Optional[Path] = None,
+        frames_dir: Optional[Path] = None
     ):
-        self.base_path = Path(base_spritesheet_path)
-        self.reference_path = Path(reference_spritesheet_path)
+        """Initialize pipeline from either spritesheets or frame directory.
+
+        Args:
+            annotations_path: Path to annotations JSON
+            masks_dir: Directory containing armor masks
+            output_dir: Output directory
+            config: Transform configuration
+            base_spritesheet_path: Path to base spritesheet (spritesheet mode)
+            reference_spritesheet_path: Path to clothed spritesheet (spritesheet mode)
+            frames_dir: Directory containing individual frames (directory mode)
+        """
         self.annotations_path = Path(annotations_path)
         self.masks_dir = Path(masks_dir)
         self.output_dir = Path(output_dir)
@@ -48,21 +159,56 @@ class ClothingPipeline:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         (self.output_dir / "frames").mkdir(exist_ok=True)
 
-        # Load data
+        # Load annotations
         self.annotations = load_annotations(self.annotations_path)
-        self.base_spritesheet = cv2.imread(str(self.base_path), cv2.IMREAD_UNCHANGED)
-        self.reference_spritesheet = cv2.imread(str(self.reference_path), cv2.IMREAD_UNCHANGED)
 
-        # Detect layout from base
-        self.layout = detect_layout(self.base_spritesheet)
-        print(f"Detected layout: {self.layout.columns}x{self.layout.rows} frames, "
-              f"{self.layout.frame_width}x{self.layout.frame_height}px each")
+        # Load frames from either spritesheets or directory
+        if frames_dir is not None:
+            # Directory mode: load individual frames
+            frames_dir = Path(frames_dir)
+            print(f"Loading frames from directory: {frames_dir}")
 
-        # Split spritesheets
-        self.base_frames = split_spritesheet(self.base_spritesheet, self.layout)
-        self.reference_frames = split_spritesheet(self.reference_spritesheet, self.layout)
+            self.base_frames = load_frames_from_directory(frames_dir, "base_frame")
+            self.reference_frames = load_frames_from_directory(frames_dir, "clothed_frame")
 
-        print(f"Split {len(self.base_frames)} base frames, {len(self.reference_frames)} reference frames")
+            print(f"Loaded {len(self.base_frames)} base frames, {len(self.reference_frames)} reference frames")
+
+            # Create layout from frame dimensions (assume 5x5 grid for 25 frames)
+            if self.base_frames:
+                h, w = self.base_frames[0].shape[:2]
+                n_frames = len(self.base_frames)
+                # Calculate grid: prefer square-ish layout
+                cols = int(np.ceil(np.sqrt(n_frames)))
+                rows = int(np.ceil(n_frames / cols))
+                self.layout = SpritesheetLayout(
+                    frame_width=w,
+                    frame_height=h,
+                    columns=cols,
+                    rows=rows,
+                    total_frames=n_frames
+                )
+                print(f"Layout for assembly: {cols}x{rows} grid, {w}x{h}px frames")
+        else:
+            # Spritesheet mode: split spritesheets
+            if base_spritesheet_path is None or reference_spritesheet_path is None:
+                raise ValueError("Must provide either frames_dir or both base_spritesheet_path and reference_spritesheet_path")
+
+            self.base_path = Path(base_spritesheet_path)
+            self.reference_path = Path(reference_spritesheet_path)
+
+            self.base_spritesheet = cv2.imread(str(self.base_path), cv2.IMREAD_UNCHANGED)
+            self.reference_spritesheet = cv2.imread(str(self.reference_path), cv2.IMREAD_UNCHANGED)
+
+            # Detect layout from base
+            self.layout = detect_layout(self.base_spritesheet)
+            print(f"Detected layout: {self.layout.columns}x{self.layout.rows} frames, "
+                  f"{self.layout.frame_width}x{self.layout.frame_height}px each")
+
+            # Split spritesheets
+            self.base_frames = split_spritesheet(self.base_spritesheet, self.layout)
+            self.reference_frames = split_spritesheet(self.reference_spritesheet, self.layout)
+
+            print(f"Split {len(self.base_frames)} base frames, {len(self.reference_frames)} reference frames")
 
     def validate_annotations(self) -> List[ValidationResult]:
         """Validate all annotations, return flagged frames."""
@@ -162,14 +308,31 @@ class ClothingPipeline:
 
         return matches
 
-    def generate_outputs(self, matches: List[FrameMatch]) -> Tuple[np.ndarray, np.ndarray]:
-        """Generate final clothing and debug overlay spritesheets."""
+    def generate_outputs(self, matches: List[FrameMatch], debug: bool = False) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate final clothing and debug overlay spritesheets.
+
+        Args:
+            matches: List of frame matches
+            debug: If True, save intermediate step outputs for each frame
+        """
         print("\n=== Generating Outputs ===")
 
         clothed_annotations = {k: v for k, v in self.annotations.items() if k.startswith("clothed_")}
         base_annotations = {k: v for k, v in self.annotations.items() if k.startswith("base_")}
 
         clothing_frames = []
+
+        # Create debug directories if needed
+        if debug:
+            debug_dir = self.output_dir / "debug"
+            debug_dir.mkdir(exist_ok=True)
+            (debug_dir / "1_aligned").mkdir(exist_ok=True)
+            (debug_dir / "2_masked").mkdir(exist_ok=True)
+            (debug_dir / "3_rotated").mkdir(exist_ok=True)
+            (debug_dir / "4_inpainted").mkdir(exist_ok=True)
+            (debug_dir / "5_final").mkdir(exist_ok=True)
+            (debug_dir / "overlap").mkdir(exist_ok=True)
+            (debug_dir / "skeleton").mkdir(exist_ok=True)
 
         for match in matches:
             base_idx = int(match.base_frame.split("_")[-1].replace(".png", ""))
@@ -187,14 +350,33 @@ class ClothingPipeline:
             if len(mask.shape) == 3:
                 mask = mask[:, :, 0]
 
-            # Transform
-            transformed = transform_frame(
-                clothed_frame, clothed_kpts,
-                base_frame, base_kpts,
-                mask, self.config
-            )
+            if debug:
+                # Use debug transform to get all intermediate steps
+                debug_output = transform_frame_debug(
+                    clothed_frame, clothed_kpts,
+                    base_frame, base_kpts,
+                    mask, self.config
+                )
 
-            clothing_frames.append(transformed)
+                # Save intermediate outputs
+                cv2.imwrite(str(debug_dir / "1_aligned" / f"frame_{base_idx:02d}.png"), debug_output.aligned_clothed)
+                cv2.imwrite(str(debug_dir / "2_masked" / f"frame_{base_idx:02d}.png"), debug_output.armor_masked)
+                cv2.imwrite(str(debug_dir / "3_rotated" / f"frame_{base_idx:02d}.png"), debug_output.rotated_armor)
+                cv2.imwrite(str(debug_dir / "4_inpainted" / f"frame_{base_idx:02d}.png"), debug_output.inpainted_armor)
+                cv2.imwrite(str(debug_dir / "5_final" / f"frame_{base_idx:02d}.png"), debug_output.final_armor)
+                cv2.imwrite(str(debug_dir / "overlap" / f"frame_{base_idx:02d}.png"), debug_output.overlap_viz)
+                cv2.imwrite(str(debug_dir / "skeleton" / f"frame_{base_idx:02d}.png"), debug_output.skeleton_viz)
+
+                clothing_frames.append(debug_output.final_armor)
+            else:
+                # Normal transform
+                transformed = transform_frame(
+                    clothed_frame, clothed_kpts,
+                    base_frame, base_kpts,
+                    mask, self.config
+                )
+                clothing_frames.append(transformed)
+
             print(f"  Generated frame {base_idx:02d} from {match.matched_clothed_frame}")
 
         # Save individual frames
@@ -211,13 +393,28 @@ class ClothingPipeline:
         cv2.imwrite(str(self.output_dir / "debug_overlay.png"), overlay_sheet)
         print(f"Saved: {self.output_dir / 'debug_overlay.png'}")
 
+        if debug:
+            # Create side-by-side comparison images
+            comparison_dir = debug_dir / "comparison"
+            comparison_dir.mkdir(exist_ok=True)
+
+            for match in matches:
+                base_idx = int(match.base_frame.split("_")[-1].replace(".png", ""))
+                comparison = create_debug_comparison(debug_dir, base_idx)
+                if comparison is not None:
+                    cv2.imwrite(str(comparison_dir / f"frame_{base_idx:02d}.png"), comparison)
+
+            print(f"Saved debug outputs to: {debug_dir}")
+            print(f"View comparisons: open {debug_dir / 'comparison'}")
+
         return clothing_sheet, overlay_sheet
 
-    def run(self, skip_validation: bool = False) -> bool:
+    def run(self, skip_validation: bool = False, debug: bool = False) -> bool:
         """Run the full pipeline.
 
         Args:
             skip_validation: Skip annotation validation step
+            debug: Save intermediate step outputs for each frame
 
         Returns:
             True if successful, False if manual intervention needed
@@ -242,7 +439,7 @@ class ClothingPipeline:
             print("Proceeding with best available matches...")
 
         # Step 3: Generate outputs
-        self.generate_outputs(matches)
+        self.generate_outputs(matches, debug=debug)
 
         print("\n=== Pipeline Complete ===")
         return True
@@ -252,10 +449,16 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate clothing spritesheet from base and reference"
     )
-    parser.add_argument("--base", type=Path, required=True,
-                       help="Base mannequin spritesheet")
-    parser.add_argument("--reference", type=Path, required=True,
-                       help="Clothed reference spritesheet")
+
+    # Input mode: either spritesheets or frame directory
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument("--frames-dir", type=Path,
+                             help="Directory containing base_frame_XX.png and clothed_frame_XX.png")
+    input_group.add_argument("--base", type=Path,
+                             help="Base mannequin spritesheet (requires --reference)")
+
+    parser.add_argument("--reference", type=Path,
+                       help="Clothed reference spritesheet (required with --base)")
     parser.add_argument("--annotations", type=Path, required=True,
                        help="Annotations JSON file")
     parser.add_argument("--masks", type=Path, required=True,
@@ -268,8 +471,14 @@ def main():
                        help="Scale factor for clothed frames")
     parser.add_argument("--pixelize", type=int, default=3,
                        help="Pixelization factor (1=none)")
+    parser.add_argument("--debug", action="store_true",
+                       help="Save intermediate step outputs for each frame")
 
     args = parser.parse_args()
+
+    # Validate spritesheet mode has both arguments
+    if args.base is not None and args.reference is None:
+        parser.error("--base requires --reference")
 
     config = TransformConfig(
         scale_factor=args.scale,
@@ -277,15 +486,16 @@ def main():
     )
 
     pipeline = ClothingPipeline(
-        base_spritesheet_path=args.base,
-        reference_spritesheet_path=args.reference,
         annotations_path=args.annotations,
         masks_dir=args.masks,
         output_dir=args.output,
-        config=config
+        config=config,
+        base_spritesheet_path=args.base,
+        reference_spritesheet_path=args.reference,
+        frames_dir=args.frames_dir
     )
 
-    success = pipeline.run(skip_validation=args.skip_validation)
+    success = pipeline.run(skip_validation=args.skip_validation, debug=args.debug)
     return 0 if success else 1
 
 

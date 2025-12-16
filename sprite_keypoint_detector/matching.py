@@ -137,30 +137,32 @@ def score_candidate_after_transform(
 
 def select_best_match(
     candidates: List[MatchCandidate],
-    blue_threshold: int = 2000
+    blue_threshold: int = 2000,
+    red_weight: float = 0.5
 ) -> Tuple[MatchCandidate, bool]:
-    """Select best candidate, minimizing blue with red as tiebreaker.
+    """Select best candidate using combined blue + red score.
+
+    The score balances coverage (blue) with fit quality (red).
+    Red pixels indicate the armor extends beyond the base silhouette,
+    which happens when pose mismatch requires heavy inpainting.
 
     Args:
         candidates: List of scored candidates
         blue_threshold: Flag for review if best blue > this
+        red_weight: Weight for red pixels in combined score (0-1)
+                   Higher = penalize floating armor more
 
     Returns:
         (best_candidate, needs_review)
     """
-    # Sort by blue (primary), then red (tiebreaker within 5%)
-    sorted_candidates = sorted(candidates, key=lambda c: (c.blue_pixels, c.red_pixels))
+    # Combined score: blue + (red * weight)
+    # This balances coverage with avoiding bloated inpainting
+    def combined_score(c: MatchCandidate) -> float:
+        return c.blue_pixels + (c.red_pixels * red_weight)
+
+    sorted_candidates = sorted(candidates, key=combined_score)
 
     best = sorted_candidates[0]
-
-    # Check for tiebreaker situation (within 5% blue)
-    if len(sorted_candidates) > 1:
-        second = sorted_candidates[1]
-        if best.blue_pixels > 0:
-            ratio = abs(best.blue_pixels - second.blue_pixels) / best.blue_pixels
-            if ratio < 0.05 and second.red_pixels < best.red_pixels:
-                best = second
-
     needs_review = best.blue_pixels > blue_threshold
 
     return best, needs_review
