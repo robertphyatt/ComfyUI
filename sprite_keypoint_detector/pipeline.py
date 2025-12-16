@@ -251,9 +251,9 @@ class ClothingPipeline:
             base_kpts = base_data.get("keypoints", {})
             base_frame = self.base_frames[base_idx]
 
-            # Find top 5 candidates by joint distance
-            candidates = find_top_candidates(base_name, base_kpts, clothed_annotations, top_n=5)
-            print(f"  Top 5 by joint distance: {[c[0] for c in candidates]}")
+            # Find top 3 candidates by joint distance
+            candidates = find_top_candidates(base_name, base_kpts, clothed_annotations)
+            print(f"  Top 3 by joint distance: {[c[0] for c in candidates]}")
 
             # Score each candidate after transform
             scored_candidates = []

@@ -79,7 +79,7 @@ def find_top_candidates(
     base_frame: str,
     base_keypoints: Dict,
     all_clothed_annotations: Dict[str, Dict],
-    top_n: int = 5
+    top_n: int = 3
 ) -> List[Tuple[str, float]]:
     """Find top N clothed frames by joint distance.
 
