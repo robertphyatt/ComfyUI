@@ -28,6 +28,7 @@ Frame directory structure:
 import argparse
 import cv2
 import numpy as np
+from dataclasses import replace
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import json
@@ -35,7 +36,7 @@ import re
 
 from .annotations import load_annotations, save_annotations, get_coords_array
 from .validation import validate_all_annotations, ValidationResult
-from .matching import find_top_candidates, score_candidate_after_transform, select_best_match, MatchCandidate, FrameMatch
+from .matching import find_top_candidates, score_candidate_after_transform, select_best_match, MatchCandidate, FrameMatch, compute_joint_distance
 from .transform import transform_frame, transform_frame_debug, get_keypoints_array, TransformConfig, TransformDebugOutput
 from .spritesheet import (
     detect_layout, split_spritesheet, assemble_spritesheet,
@@ -356,22 +357,24 @@ class ClothingPipeline:
             if len(mask.shape) == 3:
                 mask = mask[:, :, 0]
 
-            # Skip rotation if same-index frame is matched (poses should be identical)
-            # Rotation only helps when poses differ significantly
-            skip_rotation = (base_idx == clothed_idx)
-
-            # Create per-frame config
-            frame_config = TransformConfig(
-                scale_factor=self.config.scale_factor,
-                rotation_segment_width=self.config.rotation_segment_width,
-                edge_width=self.config.edge_width,
-                pixelize_factor=self.config.pixelize_factor,
-                canvas_size=self.config.canvas_size,
-                skip_rotation=skip_rotation
+            # Compute joint distance to determine if poses are similar enough to skip rotation
+            # Low joint distance means poses nearly match - rotation would only add noise artifacts
+            joint_dist = compute_joint_distance(
+                base_annotations[match.base_frame].get("keypoints", {}),
+                clothed_annotations[match.matched_clothed_frame].get("keypoints", {}),
+                KEYPOINT_NAMES
             )
 
+            # Skip rotation if poses are nearly identical (joint distance < threshold)
+            # Note: 18 keypoints, so ~8px average error per keypoint = ~150 total
+            ROTATION_SKIP_THRESHOLD = 150  # Total joint distance in pixels across all keypoints
+            skip_rotation = joint_dist < ROTATION_SKIP_THRESHOLD
+
+            # Create per-frame config using dataclasses.replace()
+            frame_config = replace(self.config, skip_rotation=skip_rotation)
+
             if skip_rotation:
-                print(f"    (skipping rotation - same pose index)")
+                print(f"    (skipping rotation - joint_dist={joint_dist:.1f} < {ROTATION_SKIP_THRESHOLD})")
 
             if debug:
                 # Use debug transform to get all intermediate steps
