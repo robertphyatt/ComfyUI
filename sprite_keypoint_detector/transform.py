@@ -443,6 +443,18 @@ def _create_overlap_visualization(
     return viz
 
 
+def _clean_ghost_pixels(image: np.ndarray, alpha_threshold: int = 128) -> np.ndarray:
+    """Zero out RGB where alpha is below threshold to remove ghost pixels.
+
+    Some source images have leftover RGB data in transparent areas from
+    previous editing. This can cause ghost artifacts when scaling.
+    """
+    result = image.copy()
+    ghost_mask = result[:, :, 3] < alpha_threshold
+    result[ghost_mask, :3] = 0
+    return result
+
+
 def transform_frame(
     clothed_image: np.ndarray,
     clothed_kpts: np.ndarray,
@@ -466,6 +478,9 @@ def transform_frame(
     """
     if config is None:
         config = TransformConfig()
+
+    # Pre-process: clean ghost pixels from transparent areas
+    clothed_image = _clean_ghost_pixels(clothed_image)
 
     # Step 1: Scale and align
     aligned_clothed, aligned_kpts = scale_and_align(
@@ -514,6 +529,9 @@ def transform_frame_debug(
     """
     if config is None:
         config = TransformConfig()
+
+    # Pre-process: clean ghost pixels from transparent areas
+    clothed_image = _clean_ghost_pixels(clothed_image)
 
     # Step 1: Scale and align
     aligned_clothed, aligned_kpts = scale_and_align(
