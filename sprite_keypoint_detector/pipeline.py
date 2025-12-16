@@ -234,7 +234,7 @@ class ClothingPipeline:
 
         return flagged
 
-    def match_frames(self, blue_threshold: int = 2000) -> List[FrameMatch]:
+    def match_frames(self, red_threshold: int = 2000) -> List[FrameMatch]:
         """Match each base frame to best clothed frame."""
         print("\n=== Matching Frames ===")
 
@@ -294,10 +294,10 @@ class ClothingPipeline:
 
             # Select best
             if scored_candidates:
-                best, needs_review = select_best_match(scored_candidates, blue_threshold)
+                best, needs_review = select_best_match(scored_candidates, red_threshold)
 
-                # Update ranks
-                sorted_by_score = sorted(scored_candidates, key=lambda c: (c.blue_pixels, c.red_pixels))
+                # Update ranks (red first, then blue - matches selection logic)
+                sorted_by_score = sorted(scored_candidates, key=lambda c: (c.red_pixels, c.blue_pixels))
                 for rank, c in enumerate(sorted_by_score):
                     c.score_rank = rank + 1
 
@@ -310,7 +310,7 @@ class ClothingPipeline:
                 matches.append(match)
 
                 status = "NEEDS REVIEW" if needs_review else "OK"
-                print(f"  -> Best match: {best.clothed_frame} (blue={best.blue_pixels}) [{status}]")
+                print(f"  -> Best match: {best.clothed_frame} (red={best.red_pixels}, blue={best.blue_pixels}) [{status}]")
 
         return matches
 
