@@ -120,6 +120,52 @@ def apply_mask(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
     return result
 
 
+def extend_mask_to_edges(
+    mask: np.ndarray,
+    clothed_alpha: np.ndarray,
+    max_gap: int = 3
+) -> np.ndarray:
+    """Extend mask to fill thin gaps between mask edge and transparent pixels.
+
+    When the armor mask is slightly smaller than the clothed sprite silhouette,
+    thin strips of edge pixels get excluded. This extends the mask to include
+    those pixels, but ONLY if they're near transparency (not mannequin pixels
+    in the middle of the sprite).
+
+    Args:
+        mask: Original armor mask (0 or 255)
+        clothed_alpha: Alpha channel of clothed image
+        max_gap: Maximum gap width to fill (pixels)
+
+    Returns:
+        Extended mask
+    """
+    from scipy.ndimage import binary_dilation
+
+    # Ensure mask is 2D
+    if len(mask.shape) == 3:
+        mask = mask[:, :, 0]
+
+    mask_visible = mask > 128
+    clothed_visible = clothed_alpha > 128
+
+    # Gap candidates: pixels in clothed sprite but not in mask
+    gap_candidates = clothed_visible & ~mask_visible
+
+    # Only fill gaps that are near transparency (edge of sprite)
+    # This prevents extending into mannequin pixels in the middle
+    transparent = clothed_alpha < 128
+    near_transparency = binary_dilation(transparent, iterations=max_gap)
+
+    # Thin strip = gap candidates that are near transparency
+    thin_strip = gap_candidates & near_transparency
+
+    # Extended mask = original + thin strips
+    extended = mask_visible | thin_strip
+
+    return (extended * 255).astype(np.uint8)
+
+
 # ============ Step 2: Rigid Rotation ============
 
 def _get_bone_angle(joint: np.ndarray, child: np.ndarray) -> float:
