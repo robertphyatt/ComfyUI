@@ -351,6 +351,9 @@ def apply_inpaint(
     neck_y = int(base_kpts[1, 1])
     uncovered = _get_uncovered_mask(base_image, armor, neck_y)
 
+    # Create interior mask for safe sampling (avoid edge pixels)
+    interior_mask = get_interior_mask(armor_mask, erosion=2)
+
     if not np.any(uncovered):
         return armor
 
@@ -384,16 +387,29 @@ def apply_inpaint(
 
         # Try TPS-mapped position
         if 0 <= src_x < w and 0 <= src_y < h:
-            if armor_mask[src_y, src_x] > 128:
+            if armor_mask[src_y, src_x] > 128 and interior_mask[src_y, src_x]:
                 result[dst_y, dst_x, :3] = original_clothed[src_y, src_x, :3]
                 result[dst_y, dst_x, 3] = 255
                 continue
 
-        # Fallback: nearest armor pixel
+        # Fallback: nearest interior armor pixel (prefer interior, fall back to any)
         orig_armor_alpha = armor[:, :, 3] > 128
         for radius in range(1, 30):
             y1, y2 = max(0, dst_y - radius), min(h, dst_y + radius + 1)
             x1, x2 = max(0, dst_x - radius), min(w, dst_x + radius + 1)
+
+            # Prefer interior pixels
+            box_interior = orig_armor_alpha[y1:y2, x1:x2] & interior_mask[y1:y2, x1:x2]
+            if np.any(box_interior):
+                box_ys, box_xs = np.where(box_interior)
+                abs_ys, abs_xs = box_ys + y1, box_xs + x1
+                distances = (abs_ys - dst_y) ** 2 + (abs_xs - dst_x) ** 2
+                closest = np.argmin(distances)
+                result[dst_y, dst_x, :3] = armor[abs_ys[closest], abs_xs[closest], :3]
+                result[dst_y, dst_x, 3] = 255
+                break
+
+            # Fall back to any armor pixel if no interior found
             box = orig_armor_alpha[y1:y2, x1:x2]
             if np.any(box):
                 box_ys, box_xs = np.where(box)
