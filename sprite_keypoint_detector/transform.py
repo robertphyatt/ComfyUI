@@ -307,6 +307,24 @@ def _get_armor_edge_near_uncovered(
     return armor_edge_near_uncovered | (armor_edge & dilated_uncovered)
 
 
+def get_interior_mask(alpha: np.ndarray, erosion: int = 2) -> np.ndarray:
+    """Get mask of interior pixels safe to sample from (not near edges).
+
+    Args:
+        alpha: Alpha channel (0-255)
+        erosion: How many pixels to erode from edges
+
+    Returns:
+        Boolean mask where True = interior pixel
+    """
+    from scipy.ndimage import binary_erosion
+
+    visible = alpha > 128
+    interior = binary_erosion(visible, iterations=erosion)
+
+    return interior
+
+
 def apply_inpaint(
     armor: np.ndarray,
     original_clothed: np.ndarray,
