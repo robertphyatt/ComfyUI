@@ -129,8 +129,9 @@ def extend_mask_to_edges(
 
     When the armor mask is slightly smaller than the clothed sprite silhouette,
     thin strips of edge pixels get excluded. This extends the mask to include
-    those pixels, but ONLY if they're near transparency (not mannequin pixels
-    in the middle of the sprite).
+    those pixels, but ONLY if they're:
+    1. Adjacent to existing mask coverage (not floating elsewhere)
+    2. Near external transparency (the sprite's outer edge)
 
     Args:
         mask: Original armor mask (0 or 255)
@@ -152,13 +153,17 @@ def extend_mask_to_edges(
     # Gap candidates: pixels in clothed sprite but not in mask
     gap_candidates = clothed_visible & ~mask_visible
 
-    # Only fill gaps that are near transparency (edge of sprite)
-    # This prevents extending into mannequin pixels in the middle
+    # Only extend to pixels that are ADJACENT to existing mask
+    # This prevents extending to disconnected regions (like head outline)
+    near_mask = binary_dilation(mask_visible, iterations=max_gap)
+    adjacent_to_mask = gap_candidates & near_mask
+
+    # Also require being near transparency (the outer edge of the sprite)
     transparent = clothed_alpha < 128
     near_transparency = binary_dilation(transparent, iterations=max_gap)
 
-    # Thin strip = gap candidates that are near transparency
-    thin_strip = gap_candidates & near_transparency
+    # Thin strip = must be adjacent to mask AND near transparency
+    thin_strip = adjacent_to_mask & near_transparency
 
     # Extended mask = original + thin strips
     extended = mask_visible | thin_strip
