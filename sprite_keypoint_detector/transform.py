@@ -540,8 +540,11 @@ def transform_frame(
     aligned_mask, _ = scale_and_align(mask_rgba, clothed_kpts, base_kpts, config)
     scaled_mask = aligned_mask[:, :, 0]
 
+    # Extend mask to include thin edge strips near transparency
+    extended_mask = extend_mask_to_edges(scaled_mask, aligned_clothed[:, :, 3])
+
     # Extract armor
-    armor = apply_mask(aligned_clothed, scaled_mask)
+    armor = apply_mask(aligned_clothed, extended_mask)
 
     # Step 2: Rotate (skip if fit is already good)
     if config.skip_rotation:
@@ -552,7 +555,7 @@ def transform_frame(
     # Step 3: Inpaint
     inpainted_armor = apply_inpaint(
         rotated_armor, aligned_clothed, base_image,
-        rotated_kpts, base_kpts, scaled_mask, config
+        rotated_kpts, base_kpts, extended_mask, config
     )
 
     # Step 4: Pixelize
@@ -591,8 +594,11 @@ def transform_frame_debug(
     aligned_mask, _ = scale_and_align(mask_rgba, clothed_kpts, base_kpts, config)
     scaled_mask = aligned_mask[:, :, 0]
 
+    # Extend mask to include thin edge strips near transparency
+    extended_mask = extend_mask_to_edges(scaled_mask, aligned_clothed[:, :, 3])
+
     # Extract armor
-    armor_masked = apply_mask(aligned_clothed, scaled_mask)
+    armor_masked = apply_mask(aligned_clothed, extended_mask)
 
     # Step 2: Rotate (skip if fit is already good)
     if config.skip_rotation:
@@ -603,7 +609,7 @@ def transform_frame_debug(
     # Step 3: Inpaint
     inpainted_armor = apply_inpaint(
         rotated_armor, aligned_clothed, base_image,
-        rotated_kpts, base_kpts, scaled_mask, config
+        rotated_kpts, base_kpts, extended_mask, config
     )
 
     # Step 4: Pixelize
