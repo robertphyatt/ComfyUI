@@ -134,3 +134,47 @@ def assign_pixel_to_segment(
         along_bone=best_along,
         perpendicular=best_perp
     )
+
+
+@dataclass
+class GoldenPixel:
+    """A pixel from the golden frame with its position and color."""
+    y: int
+    x: int
+    rgb: np.ndarray  # (3,) uint8
+    position: PixelPosition
+
+
+def build_golden_index(
+    golden_frame: np.ndarray,
+    golden_keypoints: np.ndarray
+) -> Dict[BodySegment, List[GoldenPixel]]:
+    """Build lookup structure for golden frame pixels by segment.
+
+    Args:
+        golden_frame: RGBA image of golden frame
+        golden_keypoints: 18x2 keypoints for golden frame
+
+    Returns:
+        Dict mapping each segment to list of its pixels with positions
+    """
+    h, w = golden_frame.shape[:2]
+    alpha = golden_frame[:, :, 3]
+
+    index: Dict[BodySegment, List[GoldenPixel]] = {seg: [] for seg in BodySegment}
+
+    # Find all visible pixels and assign to segments
+    visible_ys, visible_xs = np.where(alpha > 128)
+
+    for y, x in zip(visible_ys, visible_xs):
+        position = assign_pixel_to_segment(y, x, golden_keypoints)
+        if position is not None:
+            pixel = GoldenPixel(
+                y=y,
+                x=x,
+                rgb=golden_frame[y, x, :3].copy(),
+                position=position
+            )
+            index[position.segment].append(pixel)
+
+    return index
