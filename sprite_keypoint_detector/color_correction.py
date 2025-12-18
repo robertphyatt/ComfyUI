@@ -246,3 +246,40 @@ def _find_nearest_segment_color(
             return pixels[mid_idx].rgb
 
     return None
+
+
+def color_correct_frame(
+    frame: np.ndarray,
+    frame_keypoints: np.ndarray,
+    golden_index: Dict[BodySegment, List[GoldenPixel]]
+) -> np.ndarray:
+    """Color correct a single frame using golden frame colors.
+
+    Args:
+        frame: RGBA image to correct
+        frame_keypoints: 18x2 keypoints for this frame
+        golden_index: Pre-built index of golden frame
+
+    Returns:
+        Color-corrected RGBA image
+    """
+    result = frame.copy()
+    alpha = frame[:, :, 3]
+
+    # Process all visible pixels
+    visible_ys, visible_xs = np.where(alpha > 128)
+
+    for y, x in zip(visible_ys, visible_xs):
+        # Find this pixel's relative position
+        position = assign_pixel_to_segment(y, x, frame_keypoints)
+
+        if position is None:
+            continue
+
+        # Find matching color from golden frame
+        golden_rgb = find_golden_color(position, golden_index)
+
+        if golden_rgb is not None:
+            result[y, x, :3] = golden_rgb
+
+    return result
