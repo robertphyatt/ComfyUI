@@ -283,3 +283,39 @@ def color_correct_frame(
             result[y, x, :3] = golden_rgb
 
     return result
+
+
+def color_correct_all(
+    frames: List[np.ndarray],
+    keypoints_list: List[np.ndarray],
+    golden_idx: int
+) -> List[np.ndarray]:
+    """Color correct all frames using the golden frame as reference.
+
+    Args:
+        frames: List of RGBA images
+        keypoints_list: List of 18x2 keypoint arrays (one per frame)
+        golden_idx: Index of the golden frame
+
+    Returns:
+        List of color-corrected RGBA images
+    """
+    if not frames:
+        return []
+
+    # Build golden frame index
+    golden_frame = frames[golden_idx]
+    golden_keypoints = keypoints_list[golden_idx]
+    golden_index = build_golden_index(golden_frame, golden_keypoints)
+
+    # Color correct each frame
+    results = []
+    for i, (frame, kpts) in enumerate(zip(frames, keypoints_list)):
+        if i == golden_idx:
+            # Golden frame stays unchanged
+            results.append(frame.copy())
+        else:
+            corrected = color_correct_frame(frame, kpts, golden_index)
+            results.append(corrected)
+
+    return results
