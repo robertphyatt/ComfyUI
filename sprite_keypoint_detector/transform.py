@@ -454,7 +454,7 @@ class TransformDebugOutput:
     rotated_armor: np.ndarray         # After rotation
     rotated_kpts: np.ndarray          # Keypoints after rotation
     inpainted_armor: np.ndarray       # After inpaint
-    final_armor: np.ndarray           # After pixelize
+    final_armor: np.ndarray           # After inpaint (pre-pixelize)
     overlap_viz: np.ndarray           # Blue/red/green overlap visualization
     skeleton_viz: np.ndarray          # Skeleton overlay
 
@@ -596,10 +596,8 @@ def transform_frame(
         rotated_kpts, base_kpts, config
     )
 
-    # Step 4: Pixelize
-    final_armor = apply_pixelize(inpainted_armor, config.pixelize_factor)
-
-    return final_armor
+    # Pixelization now happens after color correction in pipeline
+    return inpainted_armor
 
 
 def transform_frame_debug(
@@ -650,8 +648,8 @@ def transform_frame_debug(
         rotated_kpts, base_kpts, config
     )
 
-    # Step 4: Pixelize
-    final_armor = apply_pixelize(inpainted_armor, config.pixelize_factor)
+    # Pixelization now happens after color correction in pipeline
+    final_armor = inpainted_armor
 
     # Create visualizations
     neck_y = int(base_kpts[1, 1])
