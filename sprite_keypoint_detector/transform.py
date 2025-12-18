@@ -336,7 +336,6 @@ def apply_inpaint(
     base_image: np.ndarray,
     armor_kpts: np.ndarray,
     base_kpts: np.ndarray,
-    armor_mask: np.ndarray,
     config: TransformConfig
 ) -> np.ndarray:
     """Apply soft-edge texture inpainting.
@@ -347,7 +346,6 @@ def apply_inpaint(
         base_image: Base frame RGBA
         armor_kpts: Armor keypoints (after rotation)
         base_kpts: Base keypoints
-        armor_mask: Original armor mask
         config: Transform configuration
 
     Returns:
@@ -393,7 +391,7 @@ def apply_inpaint(
 
         # Try TPS-mapped position
         if 0 <= src_x < w and 0 <= src_y < h:
-            if armor_mask[src_y, src_x] > 128 and interior_mask[src_y, src_x]:
+            if armor[src_y, src_x, 3] > 128 and interior_mask[src_y, src_x]:
                 result[dst_y, dst_x, :3] = original_clothed[src_y, src_x, :3]
                 result[dst_y, dst_x, 3] = 255
                 continue
@@ -595,7 +593,7 @@ def transform_frame(
     # Step 3: Inpaint
     inpainted_armor = apply_inpaint(
         rotated_armor, aligned_clothed, base_image,
-        rotated_kpts, base_kpts, extended_mask, config
+        rotated_kpts, base_kpts, config
     )
 
     # Step 4: Pixelize
@@ -649,7 +647,7 @@ def transform_frame_debug(
     # Step 3: Inpaint
     inpainted_armor = apply_inpaint(
         rotated_armor, aligned_clothed, base_image,
-        rotated_kpts, base_kpts, extended_mask, config
+        rotated_kpts, base_kpts, config
     )
 
     # Step 4: Pixelize
