@@ -37,12 +37,14 @@ import re
 from .annotations import load_annotations, save_annotations, get_coords_array
 from .validation import validate_all_annotations, ValidationResult
 from .matching import find_top_candidates, score_candidate_after_transform, select_best_match, MatchCandidate, FrameMatch, compute_joint_distance
-from .transform import transform_frame, transform_frame_debug, get_keypoints_array, TransformConfig, TransformDebugOutput
+from .transform import transform_frame, transform_frame_debug, get_keypoints_array, TransformConfig, TransformDebugOutput, apply_pixelize
 from .spritesheet import (
     detect_layout, split_spritesheet, assemble_spritesheet,
     save_frames, composite_overlay, SpritesheetLayout
 )
 from .keypoints import KEYPOINT_NAMES
+from .golden_selection import select_golden_frame
+from .color_correction import color_correct_all
 
 
 def create_debug_comparison(debug_dir: Path, frame_idx: int) -> np.ndarray:
@@ -60,7 +62,8 @@ def create_debug_comparison(debug_dir: Path, frame_idx: int) -> np.ndarray:
         ("2_masked", "Masked"),
         ("3_rotated", "Rotated"),
         ("4_inpainted", "Inpainted"),
-        ("5_final", "Final"),
+        ("5_color_corrected", "Color Corrected"),
+        ("6_final", "Final"),
         ("overlap", "Overlap"),
         ("skeleton", "Skeleton"),
     ]
@@ -327,9 +330,13 @@ class ClothingPipeline:
         clothed_annotations = {k: v for k, v in self.annotations.items() if k.startswith("clothed_")}
         base_annotations = {k: v for k, v in self.annotations.items() if k.startswith("base_")}
 
-        clothing_frames = []
+        # Collect inpainted frames and keypoints for color correction
+        inpainted_frames = []
+        frame_keypoints = []
+        frame_indices = []  # Track base_idx for each frame for debug output
 
         # Create debug directories if needed
+        debug_dir = None
         if debug:
             debug_dir = self.output_dir / "debug"
             debug_dir.mkdir(exist_ok=True)
@@ -337,7 +344,8 @@ class ClothingPipeline:
             (debug_dir / "2_masked").mkdir(exist_ok=True)
             (debug_dir / "3_rotated").mkdir(exist_ok=True)
             (debug_dir / "4_inpainted").mkdir(exist_ok=True)
-            (debug_dir / "5_final").mkdir(exist_ok=True)
+            (debug_dir / "5_color_corrected").mkdir(exist_ok=True)
+            (debug_dir / "6_final").mkdir(exist_ok=True)
             (debug_dir / "overlap").mkdir(exist_ok=True)
             (debug_dir / "skeleton").mkdir(exist_ok=True)
 
@@ -384,16 +392,15 @@ class ClothingPipeline:
                     mask, frame_config
                 )
 
-                # Save intermediate outputs
+                # Save intermediate outputs (up to inpainted - color correction and final come later)
                 cv2.imwrite(str(debug_dir / "1_aligned" / f"frame_{base_idx:02d}.png"), debug_output.aligned_clothed)
                 cv2.imwrite(str(debug_dir / "2_masked" / f"frame_{base_idx:02d}.png"), debug_output.armor_masked)
                 cv2.imwrite(str(debug_dir / "3_rotated" / f"frame_{base_idx:02d}.png"), debug_output.rotated_armor)
                 cv2.imwrite(str(debug_dir / "4_inpainted" / f"frame_{base_idx:02d}.png"), debug_output.inpainted_armor)
-                cv2.imwrite(str(debug_dir / "5_final" / f"frame_{base_idx:02d}.png"), debug_output.final_armor)
                 cv2.imwrite(str(debug_dir / "overlap" / f"frame_{base_idx:02d}.png"), debug_output.overlap_viz)
                 cv2.imwrite(str(debug_dir / "skeleton" / f"frame_{base_idx:02d}.png"), debug_output.skeleton_viz)
 
-                clothing_frames.append(debug_output.final_armor)
+                inpainted_frames.append(debug_output.final_armor)
             else:
                 # Normal transform
                 transformed = transform_frame(
@@ -401,20 +408,63 @@ class ClothingPipeline:
                     base_frame, base_kpts,
                     mask, frame_config
                 )
-                clothing_frames.append(transformed)
+                inpainted_frames.append(transformed)
+
+            # Store keypoints for color correction (use base keypoints since armor is aligned to base)
+            frame_keypoints.append(base_kpts)
+            frame_indices.append(base_idx)
 
             print(f"  Generated frame {base_idx:02d} from {match.matched_clothed_frame}")
 
+        # === Golden frame selection and color correction ===
+        print("\n=== Golden Frame Selection ===")
+        print("Select the best frame as golden reference...")
+
+        # Convert BGR to RGB for display in matplotlib GUI
+        display_frames = []
+        for frame in inpainted_frames:
+            if frame.shape[2] == 4:
+                # BGRA -> RGBA
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA)
+            else:
+                # BGR -> RGB
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            display_frames.append(rgb)
+
+        # Show GUI for golden selection
+        golden_idx = select_golden_frame(display_frames)
+        print(f"Selected frame {frame_indices[golden_idx]:02d} as golden reference")
+
+        # Color correct all frames
+        print("\n=== Applying Color Correction ===")
+        corrected_frames = color_correct_all(inpainted_frames, frame_keypoints, golden_idx)
+
+        # Save color-corrected frames to debug if enabled
+        if debug:
+            for i, (corrected, base_idx) in enumerate(zip(corrected_frames, frame_indices)):
+                cv2.imwrite(str(debug_dir / "5_color_corrected" / f"frame_{base_idx:02d}.png"), corrected)
+            print(f"  Saved color-corrected frames to debug/5_color_corrected/")
+
+        # Apply pixelization as final step
+        print("\n=== Applying Pixelization ===")
+        final_frames = [apply_pixelize(f, self.config.pixelize_factor) for f in corrected_frames]
+
+        # Save final frames to debug if enabled
+        if debug:
+            for i, (final, base_idx) in enumerate(zip(final_frames, frame_indices)):
+                cv2.imwrite(str(debug_dir / "6_final" / f"frame_{base_idx:02d}.png"), final)
+            print(f"  Saved final frames to debug/6_final/")
+
         # Save individual frames
-        save_frames(clothing_frames, self.output_dir / "frames", prefix="clothing")
+        save_frames(final_frames, self.output_dir / "frames", prefix="clothing")
 
         # Assemble clothing spritesheet
-        clothing_sheet = assemble_spritesheet(clothing_frames, self.layout)
+        clothing_sheet = assemble_spritesheet(final_frames, self.layout)
         cv2.imwrite(str(self.output_dir / "clothing.png"), clothing_sheet)
         print(f"Saved: {self.output_dir / 'clothing.png'}")
 
         # Create debug overlay
-        overlay_frames = composite_overlay(self.base_frames, clothing_frames)
+        overlay_frames = composite_overlay(self.base_frames, final_frames)
         overlay_sheet = assemble_spritesheet(overlay_frames, self.layout)
         cv2.imwrite(str(self.output_dir / "debug_overlay.png"), overlay_sheet)
         print(f"Saved: {self.output_dir / 'debug_overlay.png'}")
