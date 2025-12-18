@@ -178,3 +178,71 @@ def build_golden_index(
             index[position.segment].append(pixel)
 
     return index
+
+
+def find_golden_color(
+    position: PixelPosition,
+    golden_index: Dict[BodySegment, List[GoldenPixel]]
+) -> Optional[np.ndarray]:
+    """Find the color from golden frame for a given relative position.
+
+    Args:
+        position: Relative position within a segment
+        golden_index: Pre-built index of golden frame
+
+    Returns:
+        RGB color (3,) uint8, or None if not found
+    """
+    segment_pixels = golden_index.get(position.segment, [])
+
+    if not segment_pixels:
+        # Segment not visible in golden frame - try nearest segment
+        return _find_nearest_segment_color(position, golden_index)
+
+    # Find pixel with closest relative position
+    best_pixel = None
+    best_distance = float('inf')
+
+    for pixel in segment_pixels:
+        # Distance in relative position space
+        along_diff = position.along_bone - pixel.position.along_bone
+        perp_diff = position.perpendicular - pixel.position.perpendicular
+
+        # Weight along_bone more since it's normalized 0-1
+        distance = (along_diff * 50) ** 2 + perp_diff ** 2
+
+        if distance < best_distance:
+            best_distance = distance
+            best_pixel = pixel
+
+    if best_pixel is None:
+        return None
+
+    return best_pixel.rgb
+
+
+def _find_nearest_segment_color(
+    position: PixelPosition,
+    golden_index: Dict[BodySegment, List[GoldenPixel]]
+) -> Optional[np.ndarray]:
+    """Fallback: find color from nearest segment that has pixels."""
+    # Try segments in order of likely proximity
+    segment_order = [
+        BodySegment.TORSO,  # Most likely to have pixels
+        BodySegment.LEFT_UPPER_ARM, BodySegment.RIGHT_UPPER_ARM,
+        BodySegment.LEFT_UPPER_LEG, BodySegment.RIGHT_UPPER_LEG,
+        BodySegment.LEFT_LOWER_ARM, BodySegment.RIGHT_LOWER_ARM,
+        BodySegment.LEFT_LOWER_LEG, BodySegment.RIGHT_LOWER_LEG,
+        BodySegment.HEAD,
+    ]
+
+    for seg in segment_order:
+        if seg == position.segment:
+            continue
+        pixels = golden_index.get(seg, [])
+        if pixels:
+            # Return color from middle of this segment
+            mid_idx = len(pixels) // 2
+            return pixels[mid_idx].rgb
+
+    return None
