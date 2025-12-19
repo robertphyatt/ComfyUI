@@ -290,7 +290,15 @@ def color_correct_all(
     keypoints_list: List[np.ndarray],
     golden_idx: int
 ) -> List[np.ndarray]:
-    """Color correct all frames using the golden frame as reference.
+    """Color correct all frames using bidirectional propagation from golden frame.
+
+    Instead of correcting every frame from the single golden frame (which fails
+    when poses differ significantly), this propagates corrections bidirectionally:
+    - Forward: golden → golden+1 → golden+2 → ...
+    - Backward: golden → golden-1 → golden-2 → ...
+
+    Each frame uses its already-corrected neighbor as reference, ensuring
+    adjacent frames (with similar poses) are compared.
 
     Args:
         frames: List of RGBA images
@@ -303,19 +311,41 @@ def color_correct_all(
     if not frames:
         return []
 
-    # Build golden frame index
-    golden_frame = frames[golden_idx]
-    golden_keypoints = keypoints_list[golden_idx]
-    golden_index = build_golden_index(golden_frame, golden_keypoints)
+    n_frames = len(frames)
+    results: List[Optional[np.ndarray]] = [None] * n_frames
 
-    # Color correct each frame
-    results = []
-    for i, (frame, kpts) in enumerate(zip(frames, keypoints_list)):
-        if i == golden_idx:
-            # Golden frame stays unchanged
-            results.append(frame.copy())
-        else:
-            corrected = color_correct_frame(frame, kpts, golden_index)
-            results.append(corrected)
+    # Golden frame stays unchanged
+    results[golden_idx] = frames[golden_idx].copy()
+    print(f"  Frame {golden_idx:02d}: golden (unchanged)")
+
+    # Forward propagation: golden → golden+1 → golden+2 → ... → end
+    for i in range(golden_idx + 1, n_frames):
+        # Use the previous corrected frame as reference
+        ref_idx = i - 1
+        ref_frame = results[ref_idx]
+        ref_keypoints = keypoints_list[ref_idx]
+
+        # Build index from reference frame
+        ref_index = build_golden_index(ref_frame, ref_keypoints)
+
+        # Correct current frame
+        corrected = color_correct_frame(frames[i], keypoints_list[i], ref_index)
+        results[i] = corrected
+        print(f"  Frame {i:02d}: corrected from frame {ref_idx:02d} (forward)")
+
+    # Backward propagation: golden → golden-1 → golden-2 → ... → 0
+    for i in range(golden_idx - 1, -1, -1):
+        # Use the next corrected frame as reference
+        ref_idx = i + 1
+        ref_frame = results[ref_idx]
+        ref_keypoints = keypoints_list[ref_idx]
+
+        # Build index from reference frame
+        ref_index = build_golden_index(ref_frame, ref_keypoints)
+
+        # Correct current frame
+        corrected = color_correct_frame(frames[i], keypoints_list[i], ref_index)
+        results[i] = corrected
+        print(f"  Frame {i:02d}: corrected from frame {ref_idx:02d} (backward)")
 
     return results
