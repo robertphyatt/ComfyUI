@@ -330,6 +330,54 @@ def get_interior_mask(alpha: np.ndarray, erosion: int = 2) -> np.ndarray:
     return interior
 
 
+def detect_outline_pixels(
+    image: np.ndarray,
+    brightness_threshold: int = 60,
+    contrast_threshold: int = 50
+) -> np.ndarray:
+    """Detect outline pixels that should be inpainted over.
+
+    An outline pixel is one that:
+    1. Is relatively dark (below brightness_threshold), AND
+    2. Is adjacent to transparency OR adjacent to a much brighter pixel
+
+    This preserves dark interior details (shadows, leather) while
+    catching outline artifacts from rotation.
+
+    Args:
+        image: BGRA image (quantized to palette)
+        brightness_threshold: Max brightness to consider as potential outline (0-255)
+        contrast_threshold: Min brightness difference to neighbor to trigger
+
+    Returns:
+        Boolean mask where True = outline pixel to inpaint
+    """
+    h, w = image.shape[:2]
+    alpha = image[:, :, 3]
+    visible = alpha > 128
+
+    # Calculate brightness (simple average of BGR)
+    brightness = np.mean(image[:, :, :3], axis=2).astype(np.float32)
+
+    # Dark pixels are candidates
+    is_dark = brightness < brightness_threshold
+
+    # Check adjacency to transparency
+    transparent = alpha <= 128
+    adjacent_to_transparent = binary_dilation(transparent, iterations=1) & visible
+
+    # Check adjacency to much brighter pixels
+    # Dilate brightness and check if any neighbor is much brighter
+    from scipy.ndimage import maximum_filter
+    max_neighbor_brightness = maximum_filter(brightness, size=3)
+    adjacent_to_bright = (max_neighbor_brightness - brightness) > contrast_threshold
+
+    # Outline = dark AND (adjacent to transparency OR adjacent to bright)
+    outline_mask = is_dark & visible & (adjacent_to_transparent | adjacent_to_bright)
+
+    return outline_mask
+
+
 def apply_inpaint(
     armor: np.ndarray,
     original_clothed: np.ndarray,
@@ -356,7 +404,8 @@ def apply_inpaint(
 
     # Create interior mask for safe sampling (avoid edge pixels)
     # Use armor's actual alpha, not the mask - we want to avoid armor's edge pixels
-    interior_mask = get_interior_mask(armor[:, :, 3], erosion=2)
+    # Erosion=5 to avoid sampling from outline pixels that cause "double arm" artifacts
+    interior_mask = get_interior_mask(armor[:, :, 3], erosion=5)
 
     if not np.any(uncovered):
         return armor
