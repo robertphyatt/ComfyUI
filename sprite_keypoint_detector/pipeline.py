@@ -347,6 +347,19 @@ class ClothingPipeline:
             (debug_dir / "overlap").mkdir(exist_ok=True)
             (debug_dir / "skeleton").mkdir(exist_ok=True)
 
+        # === Early Palette Quantization ===
+        # Extract global palette from all clothed frames for consistent colors
+        print("\n=== Extracting Global Palette ===")
+
+        # Use pre-loaded clothed frames for palette extraction
+        global_palette = extract_palette(self.reference_frames, n_colors=16)
+        print(f"  Extracted {len(global_palette)}-color global palette")
+
+        # Save palette visualization early
+        if debug:
+            save_palette_image(global_palette, debug_dir / "palette.png")
+            print(f"  Saved palette visualization to debug/palette.png")
+
         for match in matches:
             base_idx = int(match.base_frame.split("_")[-1].replace(".png", ""))
             clothed_idx = int(match.matched_clothed_frame.split("_")[-1].replace(".png", ""))
