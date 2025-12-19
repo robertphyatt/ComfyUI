@@ -278,6 +278,207 @@ def apply_rotation(
     return result, result_kpts
 
 
+# ============ Step 2.5: Silhouette Refinement ============
+
+def _count_red_in_region(
+    armor: np.ndarray,
+    base_image: np.ndarray,
+    region_mask: np.ndarray
+) -> int:
+    """Count red pixels (armor outside base) within a region.
+
+    Args:
+        armor: Armor RGBA image
+        base_image: Base frame RGBA image
+        region_mask: Boolean mask defining region of interest
+
+    Returns:
+        Count of pixels where armor is visible but base is not, within region
+    """
+    armor_visible = armor[:, :, 3] > 128
+    base_visible = base_image[:, :, 3] > 128
+
+    # Red = armor visible AND base NOT visible (armor extending beyond base)
+    red_pixels = armor_visible & ~base_visible & region_mask
+
+    return int(np.sum(red_pixels))
+
+
+def _get_armor_segment_mask(
+    armor: np.ndarray,
+    keypoints: np.ndarray,
+    joint_idx: int,
+    child_idx: int,
+    segment_width: int = 35
+) -> np.ndarray:
+    """Get mask of armor pixels belonging to a limb segment.
+
+    Args:
+        armor: Armor RGBA image
+        keypoints: Current keypoints array
+        joint_idx: Index of parent joint
+        child_idx: Index of child joint
+        segment_width: Width of segment region
+
+    Returns:
+        Boolean mask where armor pixels are within segment region
+    """
+    h, w = armor.shape[:2]
+
+    # Get segment region (same as rotation uses)
+    segment_region = _create_segment_mask(
+        h, w, keypoints[joint_idx], keypoints[child_idx], segment_width
+    )
+
+    # Intersect with actual armor pixels
+    armor_visible = armor[:, :, 3] > 128
+
+    return armor_visible & segment_region
+
+
+def _translate_segment(
+    armor: np.ndarray,
+    keypoints: np.ndarray,
+    segment_mask: np.ndarray,
+    offset: Tuple[int, int],
+    descendant_masks: List[np.ndarray]
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Translate armor pixels in segment and all descendants by offset.
+
+    Args:
+        armor: Armor RGBA image
+        keypoints: Current keypoints array (modified in place)
+        segment_mask: Boolean mask of segment pixels to move
+        offset: (dx, dy) translation offset
+        descendant_masks: List of masks for descendant segments (also moved)
+
+    Returns:
+        (translated_armor, updated_keypoints)
+    """
+    dx, dy = offset
+    if dx == 0 and dy == 0:
+        return armor, keypoints
+
+    h, w = armor.shape[:2]
+    result = armor.copy()
+    result_kpts = keypoints.copy()
+
+    # Combine segment mask with all descendant masks
+    combined_mask = segment_mask.copy()
+    for desc_mask in descendant_masks:
+        combined_mask = combined_mask | desc_mask
+
+    # Extract pixels to move
+    pixels_to_move = np.zeros_like(armor)
+    for c in range(4):
+        pixels_to_move[:, :, c] = np.where(combined_mask, armor[:, :, c], 0)
+
+    # Clear original positions
+    for c in range(4):
+        result[:, :, c] = np.where(combined_mask, 0, result[:, :, c])
+
+    # Translate using warpAffine
+    M = np.float32([[1, 0, dx], [0, 1, dy]])
+    translated = cv2.warpAffine(
+        pixels_to_move, M, (w, h),
+        flags=cv2.INTER_NEAREST,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(0, 0, 0, 0)
+    )
+
+    # Composite translated pixels back
+    trans_alpha = translated[:, :, 3:4] / 255.0
+    for c in range(3):
+        result[:, :, c] = (translated[:, :, c] * trans_alpha[:, :, 0] +
+                          result[:, :, c] * (1 - trans_alpha[:, :, 0])).astype(np.uint8)
+    result[:, :, 3] = np.maximum(result[:, :, 3], translated[:, :, 3])
+
+    return result, result_kpts
+
+
+def _find_optimal_offset(
+    armor: np.ndarray,
+    base_image: np.ndarray,
+    segment_mask: np.ndarray,
+    descendant_masks: List[np.ndarray],
+    max_radius: int = 15
+) -> Tuple[int, int]:
+    """Find XY offset that minimizes red pixels in segment region.
+
+    Uses gradient descent with 1px steps, checking 8 directions.
+
+    Args:
+        armor: Armor RGBA image
+        base_image: Base frame RGBA image
+        segment_mask: Boolean mask of segment's armor pixels
+        descendant_masks: Masks of descendant segments (moved together)
+        max_radius: Maximum offset in any direction
+
+    Returns:
+        (dx, dy) optimal offset
+    """
+    # Combine masks for red pixel counting
+    combined_mask = segment_mask.copy()
+    for desc_mask in descendant_masks:
+        combined_mask = combined_mask | desc_mask
+
+    h, w = armor.shape[:2]
+
+    # Precompute base visibility
+    base_visible = base_image[:, :, 3] > 128
+
+    def count_red_at_offset(dx: int, dy: int) -> int:
+        """Count red pixels if segment were translated by (dx, dy)."""
+        # Translate the combined mask
+        if dx == 0 and dy == 0:
+            shifted_mask = combined_mask
+        else:
+            M = np.float32([[1, 0, dx], [0, 1, dy]])
+            shifted_mask = cv2.warpAffine(
+                combined_mask.astype(np.uint8), M, (w, h),
+                flags=cv2.INTER_NEAREST,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=0
+            ).astype(bool)
+
+        # Red = shifted armor region outside base
+        red = shifted_mask & ~base_visible
+        return int(np.sum(red))
+
+    # Start at origin
+    current_offset = (0, 0)
+    best_offset = (0, 0)
+    best_red = count_red_at_offset(0, 0)
+
+    # 8 directions: cardinal + diagonal
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1),
+                  (-1, -1), (-1, 1), (1, -1), (1, 1)]
+
+    # Gradient descent
+    while True:
+        improved = False
+        for dx, dy in directions:
+            test_x = current_offset[0] + dx
+            test_y = current_offset[1] + dy
+
+            # Check bounds
+            if abs(test_x) > max_radius or abs(test_y) > max_radius:
+                continue
+
+            red = count_red_at_offset(test_x, test_y)
+            if red < best_red:
+                best_red = red
+                best_offset = (test_x, test_y)
+                current_offset = (test_x, test_y)
+                improved = True
+                break  # Greedy: take first improvement
+
+        if not improved:
+            break  # Local minimum reached
+
+    return best_offset
+
+
 # ============ Step 3: Soft-Edge Inpaint ============
 
 def _get_uncovered_mask(
