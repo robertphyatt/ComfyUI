@@ -43,8 +43,7 @@ from .spritesheet import (
     save_frames, composite_overlay, SpritesheetLayout
 )
 from .keypoints import KEYPOINT_NAMES
-from .golden_selection import select_golden_frame
-from .color_correction import color_correct_all
+from .color_correction import extract_palette, remap_all_frames, save_palette_image
 
 
 def create_debug_comparison(debug_dir: Path, frame_idx: int) -> np.ndarray:
@@ -62,7 +61,7 @@ def create_debug_comparison(debug_dir: Path, frame_idx: int) -> np.ndarray:
         ("2_masked", "Masked"),
         ("3_rotated", "Rotated"),
         ("4_inpainted", "Inpainted"),
-        ("5_color_corrected", "Color Corrected"),
+        ("5_palette_remapped", "Palette"),
         ("6_final", "Final"),
         ("overlap", "Overlap"),
         ("skeleton", "Skeleton"),
@@ -330,9 +329,8 @@ class ClothingPipeline:
         clothed_annotations = {k: v for k, v in self.annotations.items() if k.startswith("clothed_")}
         base_annotations = {k: v for k, v in self.annotations.items() if k.startswith("base_")}
 
-        # Collect inpainted frames and keypoints for color correction
+        # Collect inpainted frames for palette remapping
         inpainted_frames = []
-        frame_keypoints = []
         frame_indices = []  # Track base_idx for each frame for debug output
 
         # Create debug directories if needed
@@ -344,7 +342,7 @@ class ClothingPipeline:
             (debug_dir / "2_masked").mkdir(exist_ok=True)
             (debug_dir / "3_rotated").mkdir(exist_ok=True)
             (debug_dir / "4_inpainted").mkdir(exist_ok=True)
-            (debug_dir / "5_color_corrected").mkdir(exist_ok=True)
+            (debug_dir / "5_palette_remapped").mkdir(exist_ok=True)
             (debug_dir / "6_final").mkdir(exist_ok=True)
             (debug_dir / "overlap").mkdir(exist_ok=True)
             (debug_dir / "skeleton").mkdir(exist_ok=True)
@@ -410,40 +408,28 @@ class ClothingPipeline:
                 )
                 inpainted_frames.append(transformed)
 
-            # Store keypoints for color correction (use base keypoints since armor is aligned to base)
-            frame_keypoints.append(base_kpts)
             frame_indices.append(base_idx)
 
             print(f"  Generated frame {base_idx:02d} from {match.matched_clothed_frame}")
 
-        # === Golden frame selection and color correction ===
-        print("\n=== Golden Frame Selection ===")
-        print("Select the best frame as golden reference...")
+        # === Palette-based color synchronization ===
+        print("\n=== Extracting Color Palette ===")
+        palette = extract_palette(inpainted_frames, n_colors=16)
+        print(f"  Extracted {len(palette)}-color palette")
 
-        # Convert BGR to RGB for display in matplotlib GUI
-        display_frames = []
-        for frame in inpainted_frames:
-            if frame.shape[2] == 4:
-                # BGRA -> RGBA
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA)
-            else:
-                # BGR -> RGB
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            display_frames.append(rgb)
+        # Save palette visualization if debug enabled
+        if debug:
+            save_palette_image(palette, debug_dir / "palette.png")
+            print(f"  Saved palette visualization to debug/palette.png")
 
-        # Show GUI for golden selection
-        golden_idx = select_golden_frame(display_frames)
-        print(f"Selected frame {frame_indices[golden_idx]:02d} as golden reference")
+        print("\n=== Remapping Frames to Palette ===")
+        corrected_frames = remap_all_frames(inpainted_frames, palette)
 
-        # Color correct all frames
-        print("\n=== Applying Color Correction ===")
-        corrected_frames = color_correct_all(inpainted_frames, frame_keypoints, golden_idx)
-
-        # Save color-corrected frames to debug if enabled
+        # Save palette-remapped frames to debug if enabled
         if debug:
             for i, (corrected, base_idx) in enumerate(zip(corrected_frames, frame_indices)):
-                cv2.imwrite(str(debug_dir / "5_color_corrected" / f"frame_{base_idx:02d}.png"), corrected)
-            print(f"  Saved color-corrected frames to debug/5_color_corrected/")
+                cv2.imwrite(str(debug_dir / "5_palette_remapped" / f"frame_{base_idx:02d}.png"), corrected)
+            print(f"  Saved palette-remapped frames to debug/5_palette_remapped/")
 
         # Apply pixelization as final step
         print("\n=== Applying Pixelization ===")
