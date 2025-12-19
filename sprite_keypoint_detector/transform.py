@@ -404,8 +404,7 @@ def apply_inpaint(
 
     # Create interior mask for safe sampling (avoid edge pixels)
     # Use armor's actual alpha, not the mask - we want to avoid armor's edge pixels
-    # Erosion=5 to avoid sampling from outline pixels that cause "double arm" artifacts
-    interior_mask = get_interior_mask(armor[:, :, 3], erosion=5)
+    interior_mask = get_interior_mask(armor[:, :, 3], erosion=2)
 
     if not np.any(uncovered):
         return armor
