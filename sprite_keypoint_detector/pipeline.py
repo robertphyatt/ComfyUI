@@ -254,6 +254,8 @@ class ClothingPipeline:
 
             # Find top 3 candidates by joint distance
             # Use max_per_joint=20 to reject frames with any single joint >20px off
+            # This prevents "double arm" artifacts where arm outlines don't align
+            # 20px threshold tuned empirically - tighter values leave no candidates
             candidates = find_top_candidates(base_name, base_kpts, clothed_annotations, max_per_joint=20.0)
             print(f"  Top 3 by joint distance: {[c[0] for c in candidates]}")
 

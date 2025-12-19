@@ -176,6 +176,8 @@ def find_top_candidates(
 
         if exceeds:
             # Skip this candidate - a joint is too far off
+            # Note: Uncomment for debugging threshold issues
+            # print(f"    Filtering {clothed_frame}: {worst_joint} exceeds threshold ({worst_dist:.1f}px > {max_per_joint}px)")
             continue
 
         dist = compute_joint_distance(base_keypoints, clothed_kpts, KEYPOINT_NAMES)
@@ -183,6 +185,9 @@ def find_top_candidates(
 
     # Sort by distance (ascending)
     distances.sort(key=lambda x: x[1])
+
+    if not distances:
+        print(f"  WARNING: All candidates filtered by per-joint threshold ({max_per_joint}px)")
 
     return distances[:top_n]
 
