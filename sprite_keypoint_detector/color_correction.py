@@ -1,370 +1,117 @@
-"""Color correction using golden frame reference.
+"""Palette-based color synchronization for sprite animations.
 
-Maps pixel colors from a golden reference frame to all other frames
-using body-segment-based keypoint-relative positioning.
+Extracts an optimal N-color palette from all frames using k-means clustering,
+then remaps every pixel to the nearest palette color. This ensures all frames
+use identical colors regardless of pose differences.
 """
 
 import numpy as np
-from enum import IntEnum
-from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Tuple
+from sklearn.cluster import KMeans
 
 
-class BodySegment(IntEnum):
-    """Body segment identifiers."""
-    HEAD = 0
-    TORSO = 1
-    LEFT_UPPER_ARM = 2
-    LEFT_LOWER_ARM = 3
-    RIGHT_UPPER_ARM = 4
-    RIGHT_LOWER_ARM = 5
-    LEFT_UPPER_LEG = 6
-    LEFT_LOWER_LEG = 7
-    RIGHT_UPPER_LEG = 8
-    RIGHT_LOWER_LEG = 9
-
-
-# Keypoint indices for each segment (start, end)
-# Based on keypoints.py: 0=head, 1=neck, 2=left_shoulder, 3=right_shoulder,
-# 4=left_elbow, 5=right_elbow, 6=left_wrist, 7=right_wrist,
-# 8=left_fingertip, 9=right_fingertip, 10=left_hip, 11=right_hip,
-# 12=left_knee, 13=right_knee, 14=left_ankle, 15=right_ankle,
-# 16=left_toe, 17=right_toe
-SEGMENT_KEYPOINTS: Dict[BodySegment, Tuple[int, int]] = {
-    BodySegment.HEAD: (0, 1),           # head -> neck
-    BodySegment.TORSO: (1, 10),         # neck -> left_hip (use as torso anchor)
-    BodySegment.LEFT_UPPER_ARM: (2, 4),  # left_shoulder -> left_elbow
-    BodySegment.LEFT_LOWER_ARM: (4, 6),  # left_elbow -> left_wrist
-    BodySegment.RIGHT_UPPER_ARM: (3, 5), # right_shoulder -> right_elbow
-    BodySegment.RIGHT_LOWER_ARM: (5, 7), # right_elbow -> right_wrist
-    BodySegment.LEFT_UPPER_LEG: (10, 12), # left_hip -> left_knee
-    BodySegment.LEFT_LOWER_LEG: (12, 14), # left_knee -> left_ankle
-    BodySegment.RIGHT_UPPER_LEG: (11, 13), # right_hip -> right_knee
-    BodySegment.RIGHT_LOWER_LEG: (13, 15), # right_knee -> right_ankle
-}
-
-
-@dataclass
-class PixelPosition:
-    """Relative position of a pixel within a body segment."""
-    segment: BodySegment
-    along_bone: float      # 0.0 = at start keypoint, 1.0 = at end keypoint
-    perpendicular: float   # signed distance perpendicular to bone (pixels)
-
-
-def _point_to_line_distance(
-    point: np.ndarray,
-    line_start: np.ndarray,
-    line_end: np.ndarray
-) -> Tuple[float, float]:
-    """Compute distance from point to line segment.
-
-    Returns:
-        (along_bone, perpendicular): Position along bone (0-1) and signed perpendicular distance
-    """
-    line_vec = line_end - line_start
-    line_len = np.linalg.norm(line_vec)
-
-    if line_len < 1e-6:
-        # Degenerate line segment
-        return 0.5, np.linalg.norm(point - line_start)
-
-    line_unit = line_vec / line_len
-    point_vec = point - line_start
-
-    # Project point onto line
-    along = np.dot(point_vec, line_unit) / line_len  # 0-1 range (can be outside)
-
-    # Perpendicular distance (signed: positive = left of bone direction)
-    perp_vec = point_vec - (along * line_len) * line_unit
-    perp_dist = np.linalg.norm(perp_vec)
-
-    # Sign: use cross product to determine which side
-    cross = line_vec[0] * point_vec[1] - line_vec[1] * point_vec[0]
-    if cross < 0:
-        perp_dist = -perp_dist
-
-    return along, perp_dist
-
-
-def assign_pixel_to_segment(
-    pixel_y: int,
-    pixel_x: int,
-    keypoints: np.ndarray
-) -> Optional[PixelPosition]:
-    """Assign a pixel to its nearest body segment.
+def extract_palette(frames: List[np.ndarray], n_colors: int = 16) -> np.ndarray:
+    """Extract optimal n-color palette from all frames using k-means.
 
     Args:
-        pixel_y: Pixel Y coordinate
-        pixel_x: Pixel X coordinate
-        keypoints: 18x2 array of keypoint coordinates
+        frames: List of BGRA images
+        n_colors: Number of colors in palette (default 16 for SNES-style)
 
     Returns:
-        PixelPosition with segment and relative position, or None if too far from any segment
+        Palette array of shape (n_colors, 3) with BGR values
     """
-    point = np.array([pixel_x, pixel_y], dtype=np.float64)
+    # Collect all visible pixels from all frames
+    all_pixels = []
+    for frame in frames:
+        alpha = frame[:, :, 3]
+        mask = alpha > 128
+        bgr = frame[:, :, :3][mask]  # Shape: (N, 3)
+        all_pixels.append(bgr)
 
-    best_segment = None
-    best_distance = float('inf')
-    best_along = 0.0
-    best_perp = 0.0
+    all_pixels = np.vstack(all_pixels)  # Shape: (total_pixels, 3)
+    print(f"  Collected {len(all_pixels):,} pixels from {len(frames)} frames")
 
-    for segment, (kp_start, kp_end) in SEGMENT_KEYPOINTS.items():
-        start = keypoints[kp_start]
-        end = keypoints[kp_end]
+    # K-means clustering to find optimal palette
+    kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=10)
+    kmeans.fit(all_pixels)
 
-        along, perp = _point_to_line_distance(point, start, end)
-
-        # Distance to segment (clamped along to 0-1 for distance calc)
-        clamped_along = max(0.0, min(1.0, along))
-        closest_on_segment = start + clamped_along * (end - start)
-        distance = np.linalg.norm(point - closest_on_segment)
-
-        if distance < best_distance:
-            best_distance = distance
-            best_segment = segment
-            best_along = along
-            best_perp = perp
-
-    if best_segment is None:
-        return None
-
-    return PixelPosition(
-        segment=best_segment,
-        along_bone=best_along,
-        perpendicular=best_perp
-    )
+    palette = kmeans.cluster_centers_.astype(np.uint8)  # Shape: (n_colors, 3)
+    return palette
 
 
-@dataclass
-class GoldenPixel:
-    """A pixel from the golden frame with its position and color."""
-    y: int
-    x: int
-    rgb: np.ndarray  # (3,) uint8
-    position: PixelPosition
-
-
-def build_golden_index(
-    golden_frame: np.ndarray,
-    golden_keypoints: np.ndarray
-) -> Dict[BodySegment, List[GoldenPixel]]:
-    """Build lookup structure for golden frame pixels by segment.
+def remap_frame_to_palette(frame: np.ndarray, palette: np.ndarray) -> np.ndarray:
+    """Remap all visible pixels in frame to nearest palette color.
 
     Args:
-        golden_frame: RGBA image of golden frame
-        golden_keypoints: 18x2 keypoints for golden frame
+        frame: BGRA image
+        palette: Array of shape (n_colors, 3) with BGR values
 
     Returns:
-        Dict mapping each segment to list of its pixels with positions
-    """
-    h, w = golden_frame.shape[:2]
-    alpha = golden_frame[:, :, 3]
-
-    index: Dict[BodySegment, List[GoldenPixel]] = {seg: [] for seg in BodySegment}
-
-    # Find all visible pixels and assign to segments
-    visible_ys, visible_xs = np.where(alpha > 128)
-
-    for y, x in zip(visible_ys, visible_xs):
-        position = assign_pixel_to_segment(y, x, golden_keypoints)
-        if position is not None:
-            pixel = GoldenPixel(
-                y=y,
-                x=x,
-                rgb=golden_frame[y, x, :3].copy(),
-                position=position
-            )
-            index[position.segment].append(pixel)
-
-    return index
-
-
-def find_golden_color(
-    position: PixelPosition,
-    golden_index: Dict[BodySegment, List[GoldenPixel]]
-) -> Optional[np.ndarray]:
-    """Find the color from golden frame for a given relative position.
-
-    Args:
-        position: Relative position within a segment
-        golden_index: Pre-built index of golden frame
-
-    Returns:
-        RGB color (3,) uint8, or None if not found
-    """
-    segment_pixels = golden_index.get(position.segment, [])
-
-    if not segment_pixels:
-        # Segment not visible in golden frame - try nearest segment
-        return _find_nearest_segment_color(position, golden_index)
-
-    # Find pixel with closest relative position
-    best_pixel = None
-    best_distance = float('inf')
-
-    for pixel in segment_pixels:
-        # Distance in relative position space
-        along_diff = position.along_bone - pixel.position.along_bone
-        perp_diff = position.perpendicular - pixel.position.perpendicular
-
-        # Weight along_bone more since it's normalized 0-1
-        distance = (along_diff * 50) ** 2 + perp_diff ** 2
-
-        if distance < best_distance:
-            best_distance = distance
-            best_pixel = pixel
-
-    if best_pixel is None:
-        return None
-
-    return best_pixel.rgb
-
-
-def _find_nearest_segment_color(
-    position: PixelPosition,
-    golden_index: Dict[BodySegment, List[GoldenPixel]]
-) -> Optional[np.ndarray]:
-    """Fallback: find color from nearest segment that has pixels."""
-    # Try segments in order of likely proximity
-    segment_order = [
-        BodySegment.TORSO,  # Most likely to have pixels
-        BodySegment.LEFT_UPPER_ARM, BodySegment.RIGHT_UPPER_ARM,
-        BodySegment.LEFT_UPPER_LEG, BodySegment.RIGHT_UPPER_LEG,
-        BodySegment.LEFT_LOWER_ARM, BodySegment.RIGHT_LOWER_ARM,
-        BodySegment.LEFT_LOWER_LEG, BodySegment.RIGHT_LOWER_LEG,
-        BodySegment.HEAD,
-    ]
-
-    for seg in segment_order:
-        if seg == position.segment:
-            continue
-        pixels = golden_index.get(seg, [])
-        if pixels:
-            # Return color from middle of this segment
-            mid_idx = len(pixels) // 2
-            return pixels[mid_idx].rgb
-
-    return None
-
-
-def color_correct_frame(
-    frame: np.ndarray,
-    frame_keypoints: np.ndarray,
-    golden_index: Dict[BodySegment, List[GoldenPixel]]
-) -> np.ndarray:
-    """Color correct a single frame using golden frame colors.
-
-    Args:
-        frame: RGBA image to correct
-        frame_keypoints: 18x2 keypoints for this frame
-        golden_index: Pre-built index of golden frame
-
-    Returns:
-        Color-corrected RGBA image
+        Remapped BGRA image
     """
     result = frame.copy()
     alpha = frame[:, :, 3]
+    mask = alpha > 128
 
-    # Process all visible pixels
-    visible_ys, visible_xs = np.where(alpha > 128)
+    # Get visible pixel coordinates
+    ys, xs = np.where(mask)
 
-    for y, x in zip(visible_ys, visible_xs):
-        # Find this pixel's relative position
-        position = assign_pixel_to_segment(y, x, frame_keypoints)
+    for y, x in zip(ys, xs):
+        pixel_bgr = frame[y, x, :3].astype(np.float32)
 
-        if position is None:
-            continue
+        # Find nearest palette color (Euclidean distance)
+        distances = np.sqrt(np.sum((palette.astype(np.float32) - pixel_bgr) ** 2, axis=1))
+        nearest_idx = np.argmin(distances)
 
-        # Find matching color from golden frame
-        golden_rgb = find_golden_color(position, golden_index)
-
-        if golden_rgb is not None:
-            result[y, x, :3] = golden_rgb
+        result[y, x, :3] = palette[nearest_idx]
 
     return result
 
 
-def color_correct_all(
+def remap_all_frames(
     frames: List[np.ndarray],
-    keypoints_list: List[np.ndarray],
-    golden_idx: int
+    palette: np.ndarray
 ) -> List[np.ndarray]:
-    """Color correct all frames using bidirectional propagation from golden frame.
-
-    Instead of correcting every frame from the single golden frame (which fails
-    when poses differ significantly), this propagates corrections bidirectionally:
-    - Forward: golden → golden+1 → golden+2 → ...
-    - Backward: golden → golden-1 → golden-2 → ...
-
-    Each frame uses its already-corrected neighbor as reference, ensuring
-    adjacent frames (with similar poses) are compared.
-
-    Note: Bidirectional propagation prevents pose-mismatch errors but may
-    introduce cumulative color drift over long sequences. Adjacent frames
-    will match closely, but distant frames may drift from golden colors.
+    """Remap all frames to use the shared palette.
 
     Args:
-        frames: List of RGBA images
-        keypoints_list: List of 18x2 keypoint arrays (one per frame)
-        golden_idx: Index of the golden frame
+        frames: List of BGRA images
+        palette: Array of shape (n_colors, 3) with BGR values
 
     Returns:
-        List of color-corrected RGBA images
-
-    Raises:
-        ValueError: If golden_idx is out of range or golden frame has no visible pixels
+        List of remapped BGRA images
     """
-    if not frames:
-        return []
+    results = []
+    for i, frame in enumerate(frames):
+        remapped = remap_frame_to_palette(frame, palette)
+        results.append(remapped)
+        print(f"  Frame {i:02d}: remapped to palette")
+    return results
 
-    n_frames = len(frames)
 
-    # Validate golden_idx range
-    if not (0 <= golden_idx < n_frames):
-        raise ValueError(f"golden_idx {golden_idx} out of range [0, {n_frames})")
+def save_palette_image(palette: np.ndarray, path: Path) -> None:
+    """Save palette as a visual swatch image.
 
-    # Validate golden frame has visible pixels
-    golden_pixels_count = np.sum(frames[golden_idx][:, :, 3] > 128)
-    if golden_pixels_count == 0:
-        raise ValueError(f"Golden frame {golden_idx} has no visible pixels")
+    Creates a 4x4 grid of 32x32 color swatches.
 
-    results: List[Optional[np.ndarray]] = [None] * n_frames
+    Args:
+        palette: Array of shape (n_colors, 3) with BGR values
+        path: Output path for the image
+    """
+    import cv2
 
-    # Golden frame stays unchanged
-    results[golden_idx] = frames[golden_idx].copy()
-    print(f"  Frame {golden_idx:02d}: golden (unchanged)")
+    n_colors = len(palette)
+    cols = 4
+    rows = (n_colors + cols - 1) // cols
+    swatch_size = 32
 
-    # Forward propagation: golden → golden+1 → golden+2 → ... → end
-    for i in range(golden_idx + 1, n_frames):
-        # Use the previous corrected frame as reference
-        ref_idx = i - 1
-        ref_frame = results[ref_idx]
-        ref_keypoints = keypoints_list[ref_idx]
+    img = np.zeros((rows * swatch_size, cols * swatch_size, 3), dtype=np.uint8)
 
-        # Build index from reference frame
-        ref_index = build_golden_index(ref_frame, ref_keypoints)
+    for i, color in enumerate(palette):
+        row, col = i // cols, i % cols
+        y1, y2 = row * swatch_size, (row + 1) * swatch_size
+        x1, x2 = col * swatch_size, (col + 1) * swatch_size
+        img[y1:y2, x1:x2] = color
 
-        # Correct current frame
-        corrected = color_correct_frame(frames[i], keypoints_list[i], ref_index)
-        results[i] = corrected
-        print(f"  Frame {i:02d}: corrected from frame {ref_idx:02d} (forward)")
-
-    # Backward propagation: golden → golden-1 → golden-2 → ... → 0
-    for i in range(golden_idx - 1, -1, -1):
-        # Use the next corrected frame as reference
-        ref_idx = i + 1
-        ref_frame = results[ref_idx]
-        ref_keypoints = keypoints_list[ref_idx]
-
-        # Build index from reference frame
-        ref_index = build_golden_index(ref_frame, ref_keypoints)
-
-        # Correct current frame
-        corrected = color_correct_frame(frames[i], keypoints_list[i], ref_index)
-        results[i] = corrected
-        print(f"  Frame {i:02d}: corrected from frame {ref_idx:02d} (backward)")
-
-    # Verify all frames were corrected (type safety)
-    assert all(r is not None for r in results), "All frames should be corrected"
-    return results  # type: ignore[return-value]
+    cv2.imwrite(str(path), img)
