@@ -61,7 +61,6 @@ def create_debug_comparison(debug_dir: Path, frame_idx: int) -> np.ndarray:
         ("2_masked", "Masked"),
         ("3_rotated", "Rotated"),
         ("4_inpainted", "Inpainted"),
-        ("5_palette_remapped", "Palette"),
         ("6_final", "Final"),
         ("overlap", "Overlap"),
         ("skeleton", "Skeleton"),
@@ -342,7 +341,6 @@ class ClothingPipeline:
             (debug_dir / "2_masked").mkdir(exist_ok=True)
             (debug_dir / "3_rotated").mkdir(exist_ok=True)
             (debug_dir / "4_inpainted").mkdir(exist_ok=True)
-            (debug_dir / "5_palette_remapped").mkdir(exist_ok=True)
             (debug_dir / "6_final").mkdir(exist_ok=True)
             (debug_dir / "overlap").mkdir(exist_ok=True)
             (debug_dir / "skeleton").mkdir(exist_ok=True)
@@ -428,28 +426,18 @@ class ClothingPipeline:
 
             print(f"  Generated frame {base_idx:02d} from {match.matched_clothed_frame}")
 
-        # === Palette-based color synchronization ===
-        print("\n=== Extracting Color Palette ===")
-        palette = extract_palette(inpainted_frames, n_colors=16)
-        print(f"  Extracted {len(palette)}-color palette")
-
-        # Save palette visualization if debug enabled
-        if debug:
-            save_palette_image(palette, debug_dir / "palette.png")
-            print(f"  Saved palette visualization to debug/palette.png")
-
-        print("\n=== Remapping Frames to Palette ===")
-        corrected_frames = remap_all_frames(inpainted_frames, palette)
-
-        # Save palette-remapped frames to debug if enabled
-        if debug:
-            for i, (corrected, base_idx) in enumerate(zip(corrected_frames, frame_indices)):
-                cv2.imwrite(str(debug_dir / "5_palette_remapped" / f"frame_{base_idx:02d}.png"), corrected)
-            print(f"  Saved palette-remapped frames to debug/5_palette_remapped/")
-
-        # Apply pixelization as final step
+        # === Pixelization ===
         print("\n=== Applying Pixelization ===")
-        final_frames = [apply_pixelize(f, self.config.pixelize_factor) for f in corrected_frames]
+        final_frames = []
+        for frame in inpainted_frames:
+            pixelized = apply_pixelize(frame, self.config.pixelize_factor)
+            final_frames.append(pixelized)
+
+        # === Final Palette Cleanup ===
+        # Remap to palette after pixelization to clean up any interpolation artifacts
+        print("\n=== Final Palette Cleanup ===")
+        final_frames = [remap_frame_to_palette(f, global_palette) for f in final_frames]
+        print(f"  Remapped {len(final_frames)} frames to global palette")
 
         # Save final frames to debug if enabled
         if debug:
