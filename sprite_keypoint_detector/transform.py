@@ -280,30 +280,6 @@ def apply_rotation(
 
 # ============ Step 2.5: Silhouette Refinement ============
 
-def _count_red_in_region(
-    armor: np.ndarray,
-    base_image: np.ndarray,
-    region_mask: np.ndarray
-) -> int:
-    """Count red pixels (armor outside base) within a region.
-
-    Args:
-        armor: Armor RGBA image
-        base_image: Base frame RGBA image
-        region_mask: Boolean mask defining region of interest
-
-    Returns:
-        Count of pixels where armor is visible but base is not, within region
-    """
-    armor_visible = armor[:, :, 3] > 128
-    base_visible = base_image[:, :, 3] > 128
-
-    # Red = armor visible AND base NOT visible (armor extending beyond base)
-    red_pixels = armor_visible & ~base_visible & region_mask
-
-    return int(np.sum(red_pixels))
-
-
 def _get_armor_segment_mask(
     armor: np.ndarray,
     keypoints: np.ndarray,
@@ -345,15 +321,18 @@ def _translate_segment(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Translate armor pixels in segment and all descendants by offset.
 
+    Note: This function only translates pixels, not keypoints. The caller
+    is responsible for updating keypoints after translation.
+
     Args:
         armor: Armor RGBA image
-        keypoints: Current keypoints array (modified in place)
+        keypoints: Current keypoints array (returned unchanged)
         segment_mask: Boolean mask of segment pixels to move
         offset: (dx, dy) translation offset
         descendant_masks: List of masks for descendant segments (also moved)
 
     Returns:
-        (translated_armor, updated_keypoints)
+        (translated_armor, keypoints_copy)
     """
     dx, dy = offset
     if dx == 0 and dy == 0:
