@@ -60,8 +60,10 @@ def create_debug_comparison(debug_dir: Path, frame_idx: int) -> np.ndarray:
         ("1_aligned", "Aligned"),
         ("2_masked", "Masked"),
         ("3_rotated", "Rotated"),
-        ("pre_inpaint_overlap", "Pre-Inpaint"),
-        ("4_inpainted", "Inpainted"),
+        ("pre_inpaint_overlap", "Pre-Refine"),
+        ("4_refined", "Refined"),
+        ("post_refine_overlap", "Post-Refine"),
+        ("5_inpainted", "Inpainted"),
         ("6_final", "Final"),
         ("overlap", "Overlap"),
         ("skeleton", "Skeleton"),
@@ -344,9 +346,11 @@ class ClothingPipeline:
             (debug_dir / "1_aligned").mkdir(exist_ok=True)
             (debug_dir / "2_masked").mkdir(exist_ok=True)
             (debug_dir / "3_rotated").mkdir(exist_ok=True)
-            (debug_dir / "4_inpainted").mkdir(exist_ok=True)
-            (debug_dir / "6_final").mkdir(exist_ok=True)
             (debug_dir / "pre_inpaint_overlap").mkdir(exist_ok=True)
+            (debug_dir / "4_refined").mkdir(exist_ok=True)
+            (debug_dir / "post_refine_overlap").mkdir(exist_ok=True)
+            (debug_dir / "5_inpainted").mkdir(exist_ok=True)
+            (debug_dir / "6_final").mkdir(exist_ok=True)
             (debug_dir / "overlap").mkdir(exist_ok=True)
             (debug_dir / "skeleton").mkdir(exist_ok=True)
 
@@ -413,8 +417,10 @@ class ClothingPipeline:
                 cv2.imwrite(str(debug_dir / "1_aligned" / f"frame_{base_idx:02d}.png"), debug_output.aligned_clothed)
                 cv2.imwrite(str(debug_dir / "2_masked" / f"frame_{base_idx:02d}.png"), debug_output.armor_masked)
                 cv2.imwrite(str(debug_dir / "3_rotated" / f"frame_{base_idx:02d}.png"), debug_output.rotated_armor)
-                cv2.imwrite(str(debug_dir / "4_inpainted" / f"frame_{base_idx:02d}.png"), debug_output.inpainted_armor)
                 cv2.imwrite(str(debug_dir / "pre_inpaint_overlap" / f"frame_{base_idx:02d}.png"), debug_output.pre_inpaint_overlap_viz)
+                cv2.imwrite(str(debug_dir / "4_refined" / f"frame_{base_idx:02d}.png"), debug_output.refined_armor)
+                cv2.imwrite(str(debug_dir / "post_refine_overlap" / f"frame_{base_idx:02d}.png"), debug_output.post_refine_overlap_viz)
+                cv2.imwrite(str(debug_dir / "5_inpainted" / f"frame_{base_idx:02d}.png"), debug_output.inpainted_armor)
                 cv2.imwrite(str(debug_dir / "overlap" / f"frame_{base_idx:02d}.png"), debug_output.overlap_viz)
                 cv2.imwrite(str(debug_dir / "skeleton" / f"frame_{base_idx:02d}.png"), debug_output.skeleton_viz)
 
