@@ -412,10 +412,16 @@ def apply_inpaint(
 
     armor_edge = _get_armor_edge_near_uncovered(armor[:, :, 3], uncovered, config.edge_width)
 
-    result = armor.copy()
-    result[:, :, 3] = np.where(armor_edge, 0, armor[:, :, 3])
+    # Detect outline pixels that should be inpainted over
+    # These are dark pixels adjacent to transparency or bright pixels
+    outline_pixels = detect_outline_pixels(armor)
 
-    inpaint_region = uncovered | armor_edge
+    result = armor.copy()
+    # Clear both armor edge and outline pixels - they'll be inpainted
+    clear_mask = armor_edge | outline_pixels
+    result[:, :, 3] = np.where(clear_mask, 0, armor[:, :, 3])
+
+    inpaint_region = uncovered | armor_edge | outline_pixels
 
     if not np.any(inpaint_region):
         return armor
