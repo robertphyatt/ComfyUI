@@ -92,6 +92,22 @@ def remap_frame_to_palette(frame: np.ndarray, palette: np.ndarray) -> np.ndarray
     return result
 
 
+def quantize_frame(frame: np.ndarray, palette: np.ndarray) -> np.ndarray:
+    """Quantize a frame to use only palette colors.
+
+    This is an alias for remap_frame_to_palette, used for clarity
+    when quantizing early in the pipeline vs final cleanup.
+
+    Args:
+        frame: BGRA image
+        palette: Array of shape (n_colors, 3) with BGR values
+
+    Returns:
+        Quantized BGRA image using only palette colors
+    """
+    return remap_frame_to_palette(frame, palette)
+
+
 def remap_all_frames(
     frames: List[np.ndarray],
     palette: np.ndarray
