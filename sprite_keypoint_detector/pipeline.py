@@ -43,7 +43,7 @@ from .spritesheet import (
     save_frames, composite_overlay, SpritesheetLayout
 )
 from .keypoints import KEYPOINT_NAMES
-from .color_correction import extract_palette, remap_all_frames, save_palette_image
+from .color_correction import extract_palette, remap_frame_to_palette, save_palette_image, quantize_frame
 
 
 def create_debug_comparison(debug_dir: Path, frame_idx: int) -> np.ndarray:
@@ -366,6 +366,9 @@ class ClothingPipeline:
 
             base_frame = self.base_frames[base_idx]
             clothed_frame = self.reference_frames[clothed_idx]
+
+            # Quantize clothed image to global palette
+            clothed_frame = quantize_frame(clothed_frame, global_palette)
 
             base_kpts = get_keypoints_array(base_annotations[match.base_frame].get("keypoints", {}))
             clothed_kpts = get_keypoints_array(clothed_annotations[match.matched_clothed_frame].get("keypoints", {}))
