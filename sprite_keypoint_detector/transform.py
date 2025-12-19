@@ -509,7 +509,8 @@ class TransformDebugOutput:
     rotated_kpts: np.ndarray          # Keypoints after rotation
     inpainted_armor: np.ndarray       # After inpaint
     final_armor: np.ndarray           # After inpaint (pre-pixelize)
-    overlap_viz: np.ndarray           # Blue/red/green overlap visualization
+    pre_inpaint_overlap_viz: np.ndarray  # Overlap viz BEFORE inpaint (shows what needs filling)
+    overlap_viz: np.ndarray           # Blue/red/green overlap visualization (after inpaint)
     skeleton_viz: np.ndarray          # Skeleton overlay
 
 
@@ -707,6 +708,11 @@ def transform_frame_debug(
 
     # Create visualizations
     neck_y = int(base_kpts[1, 1])
+
+    # Pre-inpaint overlap shows what needs to be filled (before inpainting)
+    pre_inpaint_overlap_viz = _create_overlap_visualization(base_image, rotated_armor, neck_y)
+
+    # Post-inpaint overlap shows final coverage (after inpainting)
     overlap_viz = _create_overlap_visualization(base_image, final_armor, neck_y)
 
     # Skeleton visualization: base skeleton (green) + armor skeleton (red) on base image
@@ -722,6 +728,7 @@ def transform_frame_debug(
         rotated_kpts=rotated_kpts,
         inpainted_armor=inpainted_armor,
         final_armor=final_armor,
+        pre_inpaint_overlap_viz=pre_inpaint_overlap_viz,
         overlap_viz=overlap_viz,
         skeleton_viz=skeleton_viz
     )
