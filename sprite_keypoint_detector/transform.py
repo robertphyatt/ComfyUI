@@ -479,6 +479,90 @@ def _find_optimal_offset(
     return best_offset
 
 
+def refine_silhouette_alignment(
+    armor: np.ndarray,
+    armor_kpts: np.ndarray,
+    base_image: np.ndarray,
+    base_kpts: np.ndarray,
+    config: TransformConfig,
+    max_iterations: int = 50
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Iteratively refine armor position to minimize red pixels.
+
+    After rotation aligns bone angles, this step translates limb segments
+    to better align armor silhouette with base silhouette.
+
+    Args:
+        armor: Rotated armor RGBA image
+        armor_kpts: Armor keypoints after rotation
+        base_image: Base frame RGBA image
+        base_kpts: Base frame keypoints
+        config: Transform configuration
+        max_iterations: Maximum refinement passes
+
+    Returns:
+        (refined_armor, refined_keypoints)
+    """
+    result = armor.copy()
+    result_kpts = armor_kpts.copy()
+
+    # Count initial red pixels for convergence check
+    armor_visible = result[:, :, 3] > 128
+    base_visible = base_image[:, :, 3] > 128
+    prev_total_red = int(np.sum(armor_visible & ~base_visible))
+
+    for iteration in range(max_iterations):
+        # Process all limb chains hierarchically
+        for chain in LIMB_CHAINS:
+            for i, (joint_idx, child_idx, name) in enumerate(chain):
+                # Get segment mask
+                segment_mask = _get_armor_segment_mask(
+                    result, result_kpts, joint_idx, child_idx,
+                    config.rotation_segment_width
+                )
+
+                if not np.any(segment_mask):
+                    continue
+
+                # Get descendant masks (remaining segments in chain)
+                descendant_masks = []
+                for j in range(i + 1, len(chain)):
+                    desc_joint, desc_child, _ = chain[j]
+                    desc_mask = _get_armor_segment_mask(
+                        result, result_kpts, desc_joint, desc_child,
+                        config.rotation_segment_width
+                    )
+                    if np.any(desc_mask):
+                        descendant_masks.append(desc_mask)
+
+                # Find optimal offset for this segment
+                offset = _find_optimal_offset(
+                    result, base_image, segment_mask, descendant_masks
+                )
+
+                if offset != (0, 0):
+                    # Apply translation to segment and descendants
+                    result, result_kpts = _translate_segment(
+                        result, result_kpts, segment_mask, offset, descendant_masks
+                    )
+
+                    # Update keypoints for this segment and descendants
+                    dx, dy = offset
+                    result_kpts[child_idx] = result_kpts[child_idx] + np.array([dx, dy])
+                    for j in range(i + 1, len(chain)):
+                        desc_joint, desc_child, _ = chain[j]
+                        result_kpts[desc_child] = result_kpts[desc_child] + np.array([dx, dy])
+
+        # Check convergence
+        armor_visible = result[:, :, 3] > 128
+        total_red = int(np.sum(armor_visible & ~base_visible))
+        if total_red >= prev_total_red:
+            break  # No improvement, stop
+        prev_total_red = total_red
+
+    return result, result_kpts
+
+
 # ============ Step 3: Soft-Edge Inpaint ============
 
 def _get_uncovered_mask(
@@ -708,9 +792,12 @@ class TransformDebugOutput:
     armor_masked: np.ndarray          # After applying mask
     rotated_armor: np.ndarray         # After rotation
     rotated_kpts: np.ndarray          # Keypoints after rotation
+    refined_armor: np.ndarray         # After silhouette refinement
+    refined_kpts: np.ndarray          # Keypoints after refinement
     inpainted_armor: np.ndarray       # After inpaint
     final_armor: np.ndarray           # After inpaint (pre-pixelize)
     pre_inpaint_overlap_viz: np.ndarray  # Overlap viz BEFORE inpaint (shows what needs filling)
+    post_refine_overlap_viz: np.ndarray  # Overlap viz AFTER refinement (shows improvement)
     overlap_viz: np.ndarray           # Blue/red/green overlap visualization (after inpaint)
     skeleton_viz: np.ndarray          # Skeleton overlay
 
@@ -846,10 +933,15 @@ def transform_frame(
     else:
         rotated_armor, rotated_kpts = apply_rotation(armor, aligned_kpts, base_kpts, config)
 
+    # Step 2.5: Silhouette refinement
+    refined_armor, refined_kpts = refine_silhouette_alignment(
+        rotated_armor, rotated_kpts, base_image, base_kpts, config
+    )
+
     # Step 3: Inpaint
     inpainted_armor = apply_inpaint(
-        rotated_armor, aligned_clothed, base_image,
-        rotated_kpts, base_kpts, config
+        refined_armor, aligned_clothed, base_image,
+        refined_kpts, base_kpts, config
     )
 
     # Pixelization now happens after color correction in pipeline
@@ -898,10 +990,15 @@ def transform_frame_debug(
     else:
         rotated_armor, rotated_kpts = apply_rotation(armor_masked, aligned_kpts, base_kpts, config)
 
+    # Step 2.5: Silhouette refinement
+    refined_armor, refined_kpts = refine_silhouette_alignment(
+        rotated_armor, rotated_kpts, base_image, base_kpts, config
+    )
+
     # Step 3: Inpaint
     inpainted_armor = apply_inpaint(
-        rotated_armor, aligned_clothed, base_image,
-        rotated_kpts, base_kpts, config
+        refined_armor, aligned_clothed, base_image,
+        refined_kpts, base_kpts, config
     )
 
     # Pixelization now happens after color correction in pipeline
@@ -910,8 +1007,11 @@ def transform_frame_debug(
     # Create visualizations
     neck_y = int(base_kpts[1, 1])
 
-    # Pre-inpaint overlap shows what needs to be filled (before inpainting)
+    # Pre-inpaint overlap shows what needs to be filled (before refinement)
     pre_inpaint_overlap_viz = _create_overlap_visualization(base_image, rotated_armor, neck_y)
+
+    # Post-refinement overlap shows improvement from silhouette alignment
+    post_refine_overlap_viz = _create_overlap_visualization(base_image, refined_armor, neck_y)
 
     # Post-inpaint overlap shows final coverage (after inpainting)
     overlap_viz = _create_overlap_visualization(base_image, final_armor, neck_y)
@@ -919,7 +1019,7 @@ def transform_frame_debug(
     # Skeleton visualization: base skeleton (green) + armor skeleton (red) on base image
     skeleton_viz = base_image[:, :, :3].copy()
     skeleton_viz = _draw_skeleton_on_image(skeleton_viz, base_kpts, color=(0, 255, 0), thickness=2)
-    skeleton_viz = _draw_skeleton_on_image(skeleton_viz, rotated_kpts, color=(0, 0, 255), thickness=1)
+    skeleton_viz = _draw_skeleton_on_image(skeleton_viz, refined_kpts, color=(0, 0, 255), thickness=1)
 
     return TransformDebugOutput(
         aligned_clothed=aligned_clothed,
@@ -927,9 +1027,12 @@ def transform_frame_debug(
         armor_masked=armor_masked,
         rotated_armor=rotated_armor,
         rotated_kpts=rotated_kpts,
+        refined_armor=refined_armor,
+        refined_kpts=refined_kpts,
         inpainted_armor=inpainted_armor,
         final_armor=final_armor,
         pre_inpaint_overlap_viz=pre_inpaint_overlap_viz,
+        post_refine_overlap_viz=post_refine_overlap_viz,
         overlap_viz=overlap_viz,
         skeleton_viz=skeleton_viz
     )
