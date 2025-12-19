@@ -300,6 +300,10 @@ def color_correct_all(
     Each frame uses its already-corrected neighbor as reference, ensuring
     adjacent frames (with similar poses) are compared.
 
+    Note: Bidirectional propagation prevents pose-mismatch errors but may
+    introduce cumulative color drift over long sequences. Adjacent frames
+    will match closely, but distant frames may drift from golden colors.
+
     Args:
         frames: List of RGBA images
         keypoints_list: List of 18x2 keypoint arrays (one per frame)
@@ -307,11 +311,24 @@ def color_correct_all(
 
     Returns:
         List of color-corrected RGBA images
+
+    Raises:
+        ValueError: If golden_idx is out of range or golden frame has no visible pixels
     """
     if not frames:
         return []
 
     n_frames = len(frames)
+
+    # Validate golden_idx range
+    if not (0 <= golden_idx < n_frames):
+        raise ValueError(f"golden_idx {golden_idx} out of range [0, {n_frames})")
+
+    # Validate golden frame has visible pixels
+    golden_pixels_count = np.sum(frames[golden_idx][:, :, 3] > 128)
+    if golden_pixels_count == 0:
+        raise ValueError(f"Golden frame {golden_idx} has no visible pixels")
+
     results: List[Optional[np.ndarray]] = [None] * n_frames
 
     # Golden frame stays unchanged
@@ -348,4 +365,6 @@ def color_correct_all(
         results[i] = corrected
         print(f"  Frame {i:02d}: corrected from frame {ref_idx:02d} (backward)")
 
-    return results
+    # Verify all frames were corrected (type safety)
+    assert all(r is not None for r in results), "All frames should be corrected"
+    return results  # type: ignore[return-value]
