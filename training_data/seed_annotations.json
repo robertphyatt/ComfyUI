@@ -1,0 +1,230 @@
+{
+  "metadata": {
+    "image_size": [512, 512],
+    "keypoint_names": [
+      "head", "neck", "left_shoulder", "right_shoulder",
+      "left_elbow", "right_elbow", "left_wrist", "right_wrist",
+      "left_hip", "right_hip", "left_knee", "right_knee",
+      "left_ankle", "right_ankle"
+    ],
+    "note": "AI-assisted initial placement - requires human review and adjustment"
+  },
+  "annotations": {
+    "base_frame_01.png": {
+      "keypoints": {
+        "head": [258, 115],
+        "neck": [258, 148],
+        "left_shoulder": [290, 168],
+        "right_shoulder": [226, 168],
+        "left_elbow": [310, 205],
+        "right_elbow": [200, 210],
+        "left_wrist": [305, 248],
+        "right_wrist": [185, 255],
+        "left_hip": [278, 268],
+        "right_hip": [238, 268],
+        "left_knee": [285, 320],
+        "right_knee": [230, 315],
+        "left_ankle": [290, 370],
+        "right_ankle": [225, 358]
+      }
+    },
+    "base_frame_03.png": {
+      "keypoints": {
+        "head": [258, 115],
+        "neck": [258, 148],
+        "left_shoulder": [290, 168],
+        "right_shoulder": [226, 168],
+        "left_elbow": [312, 205],
+        "right_elbow": [198, 208],
+        "left_wrist": [308, 250],
+        "right_wrist": [182, 252],
+        "left_hip": [278, 268],
+        "right_hip": [238, 268],
+        "left_knee": [280, 318],
+        "right_knee": [235, 320],
+        "left_ankle": [275, 368],
+        "right_ankle": [240, 372]
+      }
+    },
+    "base_frame_05.png": {
+      "keypoints": {
+        "head": [258, 115],
+        "neck": [258, 148],
+        "left_shoulder": [292, 168],
+        "right_shoulder": [224, 168],
+        "left_elbow": [315, 202],
+        "right_elbow": [195, 202],
+        "left_wrist": [310, 248],
+        "right_wrist": [188, 248],
+        "left_hip": [278, 268],
+        "right_hip": [238, 268],
+        "left_knee": [278, 320],
+        "right_knee": [242, 318],
+        "left_ankle": [268, 370],
+        "right_ankle": [255, 365]
+      }
+    },
+    "base_frame_07.png": {
+      "keypoints": {
+        "head": [258, 118],
+        "neck": [258, 150],
+        "left_shoulder": [292, 170],
+        "right_shoulder": [224, 170],
+        "left_elbow": [318, 205],
+        "right_elbow": [192, 205],
+        "left_wrist": [315, 250],
+        "right_wrist": [185, 250],
+        "left_hip": [278, 270],
+        "right_hip": [238, 270],
+        "left_knee": [275, 322],
+        "right_knee": [245, 320],
+        "left_ankle": [265, 372],
+        "right_ankle": [258, 368]
+      }
+    },
+    "base_frame_09.png": {
+      "keypoints": {
+        "head": [258, 115],
+        "neck": [258, 148],
+        "left_shoulder": [290, 168],
+        "right_shoulder": [226, 168],
+        "left_elbow": [312, 202],
+        "right_elbow": [198, 202],
+        "left_wrist": [305, 248],
+        "right_wrist": [190, 248],
+        "left_hip": [278, 268],
+        "right_hip": [238, 268],
+        "left_knee": [282, 318],
+        "right_knee": [235, 320],
+        "left_ankle": [285, 368],
+        "right_ankle": [228, 372]
+      }
+    },
+    "base_frame_11.png": {
+      "keypoints": {
+        "head": [258, 115],
+        "neck": [258, 148],
+        "left_shoulder": [292, 168],
+        "right_shoulder": [224, 168],
+        "left_elbow": [315, 202],
+        "right_elbow": [195, 205],
+        "left_wrist": [312, 250],
+        "right_wrist": [182, 252],
+        "left_hip": [278, 268],
+        "right_hip": [238, 268],
+        "left_knee": [285, 318],
+        "right_knee": [230, 322],
+        "left_ankle": [292, 368],
+        "right_ankle": [218, 375]
+      }
+    },
+    "clothed_frame_01.png": {
+      "keypoints": {
+        "head": [258, 115],
+        "neck": [258, 150],
+        "left_shoulder": [300, 172],
+        "right_shoulder": [216, 172],
+        "left_elbow": [322, 215],
+        "right_elbow": [188, 220],
+        "left_wrist": [318, 268],
+        "right_wrist": [172, 275],
+        "left_hip": [282, 282],
+        "right_hip": [234, 282],
+        "left_knee": [290, 340],
+        "right_knee": [225, 335],
+        "left_ankle": [295, 398],
+        "right_ankle": [218, 388]
+      }
+    },
+    "clothed_frame_03.png": {
+      "keypoints": {
+        "head": [258, 115],
+        "neck": [258, 150],
+        "left_shoulder": [300, 172],
+        "right_shoulder": [216, 172],
+        "left_elbow": [325, 215],
+        "right_elbow": [185, 218],
+        "left_wrist": [322, 270],
+        "right_wrist": [168, 272],
+        "left_hip": [282, 282],
+        "right_hip": [234, 282],
+        "left_knee": [285, 342],
+        "right_knee": [232, 345],
+        "left_ankle": [280, 400],
+        "right_ankle": [238, 405]
+      }
+    },
+    "clothed_frame_05.png": {
+      "keypoints": {
+        "head": [258, 115],
+        "neck": [258, 150],
+        "left_shoulder": [302, 172],
+        "right_shoulder": [214, 172],
+        "left_elbow": [328, 212],
+        "right_elbow": [182, 212],
+        "left_wrist": [325, 268],
+        "right_wrist": [175, 268],
+        "left_hip": [282, 282],
+        "right_hip": [234, 282],
+        "left_knee": [282, 342],
+        "right_knee": [240, 340],
+        "left_ankle": [272, 400],
+        "right_ankle": [252, 395]
+      }
+    },
+    "clothed_frame_07.png": {
+      "keypoints": {
+        "head": [258, 118],
+        "neck": [258, 152],
+        "left_shoulder": [302, 174],
+        "right_shoulder": [214, 174],
+        "left_elbow": [330, 215],
+        "right_elbow": [180, 215],
+        "left_wrist": [328, 272],
+        "right_wrist": [172, 272],
+        "left_hip": [282, 284],
+        "right_hip": [234, 284],
+        "left_knee": [278, 345],
+        "right_knee": [244, 343],
+        "left_ankle": [268, 402],
+        "right_ankle": [258, 398]
+      }
+    },
+    "clothed_frame_09.png": {
+      "keypoints": {
+        "head": [258, 115],
+        "neck": [258, 150],
+        "left_shoulder": [300, 172],
+        "right_shoulder": [216, 172],
+        "left_elbow": [325, 212],
+        "right_elbow": [185, 212],
+        "left_wrist": [320, 268],
+        "right_wrist": [178, 268],
+        "left_hip": [282, 282],
+        "right_hip": [234, 282],
+        "left_knee": [288, 340],
+        "right_knee": [232, 345],
+        "left_ankle": [292, 398],
+        "right_ankle": [222, 405]
+      }
+    },
+    "clothed_frame_11.png": {
+      "keypoints": {
+        "head": [258, 115],
+        "neck": [258, 150],
+        "left_shoulder": [302, 172],
+        "right_shoulder": [214, 172],
+        "left_elbow": [328, 212],
+        "right_elbow": [182, 215],
+        "left_wrist": [325, 272],
+        "right_wrist": [168, 275],
+        "left_hip": [282, 282],
+        "right_hip": [234, 282],
+        "left_knee": [290, 340],
+        "right_knee": [225, 348],
+        "left_ankle": [298, 398],
+        "right_ankle": [212, 408]
+      }
+    }
+  }
+}

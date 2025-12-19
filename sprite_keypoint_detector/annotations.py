@@ -20,17 +20,20 @@ def migrate_legacy_annotation(keypoints: Dict) -> Dict:
     """Convert legacy [x, y] format to new {x, y, source, confidence} format.
 
     Legacy format: {"head": [249, 172], "neck": [252, 217]}
-    New format: {"head": {"x": 249, "y": 172, "source": "auto", "confidence": 0.0}}
+    New format: {"head": {"x": 249, "y": 172, "source": "manual", "confidence": 1.0}}
+
+    Legacy annotations are treated as manual since they were created
+    before source tracking was added.
     """
     migrated = {}
     for name, value in keypoints.items():
         if isinstance(value, list):
-            # Legacy format - assume auto with unknown confidence
+            # Legacy format - treat as manual (existed before source tracking)
             migrated[name] = {
                 "x": value[0],
                 "y": value[1],
-                "source": "auto",
-                "confidence": 0.0  # Unknown confidence from legacy
+                "source": "manual",
+                "confidence": 1.0  # Assume high confidence for legacy manual annotations
             }
         elif isinstance(value, dict) and "x" in value:
             # Already new format

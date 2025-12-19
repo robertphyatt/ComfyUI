@@ -15,7 +15,10 @@ from .keypoints import KEYPOINT_NAMES, NUM_KEYPOINTS
 class OptimizerConfig:
     """Configuration for skeleton optimizer."""
     scale_factor: float = 1.057
-    # Skip head(0), neck(1), fingertips(8,9), and toes(16,17) - extremities follow their parents
+    # Optimize all body parts: shoulders(2,3), elbows(4,5), wrists(6,7),
+    # hips(10,11), knees(12,13), ankles(14,15)
+    # Skip head(0), neck(1), fingertips(8,9), toes(16,17) - extremities follow parents
+    # Regional constraint prevents keypoints from moving unless uncovered pixels are nearby
     optimize_indices: Tuple[int, ...] = (2, 3, 4, 5, 6, 7, 10, 11, 12, 13, 14, 15)
     step_size: int = 1
     max_iterations: int = 100
@@ -204,6 +207,62 @@ def count_uncovered_pixels(
     return int(np.sum(uncovered))
 
 
+def get_uncovered_mask(
+    base_image: np.ndarray,
+    armor_image: np.ndarray,
+    neck_y: Optional[int] = None
+) -> np.ndarray:
+    """Get boolean mask of uncovered pixels.
+
+    Args:
+        base_image: Base mannequin RGBA image
+        armor_image: Warped armor RGBA image (same size)
+        neck_y: If provided, ignore uncovered pixels above this Y coordinate.
+
+    Returns:
+        Boolean mask where True = uncovered base pixel
+    """
+    base_visible = base_image[:, :, 3] > 128
+    armor_covers = armor_image[:, :, 3] > 128
+    uncovered = base_visible & ~armor_covers
+
+    if neck_y is not None:
+        h = base_image.shape[0]
+        valid_region = np.zeros((h, base_image.shape[1]), dtype=bool)
+        valid_region[neck_y:, :] = True
+        uncovered = uncovered & valid_region
+
+    return uncovered
+
+
+def has_uncovered_near_keypoint(
+    uncovered_mask: np.ndarray,
+    keypoint: np.ndarray,
+    radius: int = 50
+) -> bool:
+    """Check if there are uncovered pixels within radius of keypoint.
+
+    Args:
+        uncovered_mask: Boolean mask of uncovered pixels
+        keypoint: (x, y) coordinates of keypoint
+        radius: Search radius in pixels
+
+    Returns:
+        True if any uncovered pixels within radius of keypoint
+    """
+    h, w = uncovered_mask.shape
+    x, y = int(keypoint[0]), int(keypoint[1])
+
+    # Define bounding box around keypoint
+    x1 = max(0, x - radius)
+    x2 = min(w, x + radius)
+    y1 = max(0, y - radius)
+    y2 = min(h, y + radius)
+
+    # Check if any uncovered pixels in region
+    return np.any(uncovered_mask[y1:y2, x1:x2])
+
+
 def apply_mask_to_image(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
     """Apply binary mask to image, setting alpha from mask.
 
@@ -227,8 +286,9 @@ def evaluate_keypoints(
     base_image: np.ndarray,
     base_keypoints: np.ndarray,
     mask_image: np.ndarray,
-    config: OptimizerConfig
-) -> Tuple[int, np.ndarray]:
+    config: OptimizerConfig,
+    return_uncovered_mask: bool = False
+) -> Tuple[int, np.ndarray, Optional[np.ndarray]]:
     """Run full pipeline and return uncovered pixel count.
 
     Args:
@@ -238,9 +298,10 @@ def evaluate_keypoints(
         base_keypoints: Target keypoints [14, 2]
         mask_image: Armor mask (white = armor)
         config: Optimizer configuration
+        return_uncovered_mask: If True, also return the uncovered pixel mask
 
     Returns:
-        Tuple of (uncovered_count, warped_composite)
+        Tuple of (uncovered_count, warped_composite, uncovered_mask or None)
     """
     # Scale and align clothed image
     scaled_clothed, scaled_kpts = scale_and_align_image(
@@ -276,9 +337,13 @@ def evaluate_keypoints(
     neck_y = int(base_keypoints[1, 1])
 
     # Count uncovered pixels (only below neck to prevent cheating)
-    uncovered = count_uncovered_pixels(base_image, warped_armor, neck_y=neck_y)
+    uncovered_count = count_uncovered_pixels(base_image, warped_armor, neck_y=neck_y)
 
-    return uncovered, warped_armor
+    if return_uncovered_mask:
+        uncovered_mask = get_uncovered_mask(base_image, warped_armor, neck_y=neck_y)
+        return uncovered_count, warped_armor, uncovered_mask
+
+    return uncovered_count, warped_armor, None
 
 
 @dataclass
@@ -324,9 +389,27 @@ def optimize_keypoints(
     original_kpts = clothed_keypoints.copy()
     current_kpts = clothed_keypoints.copy()
 
-    # Initial evaluation
-    initial_uncovered, _ = evaluate_keypoints(
-        clothed_image, current_kpts, base_image, base_keypoints, mask_image, config
+    # Compute NO-WARP baseline - areas that are covered without any warping
+    # This is our "protected" mask - we should never create new gray in areas that were covered here
+    scaled_clothed, scaled_kpts = scale_and_align_image(
+        clothed_image, clothed_keypoints, base_keypoints, config.scale_factor
+    )
+    mask_rgba = np.zeros((*mask_image.shape, 4), dtype=np.uint8)
+    mask_rgba[:, :, 0] = mask_image
+    mask_rgba[:, :, 3] = mask_image
+    scaled_mask, _ = scale_and_align_image(
+        mask_rgba, clothed_keypoints, base_keypoints, config.scale_factor
+    )
+    no_warp_armor = apply_mask_to_image(scaled_clothed, scaled_mask[:, :, 0])
+    neck_y = int(base_keypoints[1, 1])
+    no_warp_uncovered = get_uncovered_mask(base_image, no_warp_armor, neck_y)
+    # Areas that were COVERED in no-warp state (these must stay covered)
+    no_warp_covered = ~no_warp_uncovered
+
+    # Initial evaluation with uncovered mask
+    initial_uncovered, _, uncovered_mask = evaluate_keypoints(
+        clothed_image, current_kpts, base_image, base_keypoints, mask_image, config,
+        return_uncovered_mask=True
     )
     current_uncovered = initial_uncovered
 
@@ -336,12 +419,31 @@ def optimize_keypoints(
     # Directions to try: left, right, up, down
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
+    # Regional constraint radius - only optimize keypoints with uncovered pixels nearby
+    # Very tight radius (12px) ensures keypoints only move for truly local coverage issues
+    REGION_RADIUS = 12
+
+    # Maximum displacement from original position - prevents extreme warping
+    # 8px is enough for minor adjustments without distorting body parts
+    MAX_DISPLACEMENT = 8
+
     iteration = 0
     while current_uncovered > 0 and iteration < config.max_iterations:
         iteration += 1
         improved = False
 
+        # Get current uncovered mask to check which keypoints to optimize
+        _, _, uncovered_mask = evaluate_keypoints(
+            clothed_image, current_kpts, base_image, base_keypoints, mask_image, config,
+            return_uncovered_mask=True
+        )
+
         for kpt_idx in config.optimize_indices:
+            # REGIONAL CONSTRAINT: Skip keypoints with no uncovered pixels nearby
+            # Use the BASE keypoints position (where the warp targets) not clothed keypoints
+            if not has_uncovered_near_keypoint(uncovered_mask, base_keypoints[kpt_idx], REGION_RADIUS):
+                continue
+
             for dx, dy in directions:
                 # Try moving this keypoint
                 test_kpts = current_kpts.copy()
@@ -354,12 +456,40 @@ def optimize_keypoints(
                     test_kpts[extremity_idx, 0] += dx * config.step_size
                     test_kpts[extremity_idx, 1] += dy * config.step_size
 
-                test_uncovered, _ = evaluate_keypoints(
+                # Check displacement limit - don't let keypoints drift too far
+                displacement = np.sqrt(
+                    (test_kpts[kpt_idx, 0] - original_kpts[kpt_idx, 0]) ** 2 +
+                    (test_kpts[kpt_idx, 1] - original_kpts[kpt_idx, 1]) ** 2
+                )
+                if displacement > MAX_DISPLACEMENT:
+                    continue  # Skip this move, keypoint has moved too far
+
+                test_uncovered, _, test_uncovered_mask = evaluate_keypoints(
                     clothed_image, test_kpts, base_image, base_keypoints,
-                    mask_image, config
+                    mask_image, config, return_uncovered_mask=True
                 )
 
-                if test_uncovered < current_uncovered:
+                # Check LOCAL improvement - the keypoint's region must improve, not just global
+                kpt_pos = base_keypoints[kpt_idx]
+                h, w = uncovered_mask.shape
+                kx, ky = int(kpt_pos[0]), int(kpt_pos[1])
+                lx1, lx2 = max(0, kx - REGION_RADIUS), min(w, kx + REGION_RADIUS)
+                ly1, ly2 = max(0, ky - REGION_RADIUS), min(h, ky + REGION_RADIUS)
+
+                local_before = np.sum(uncovered_mask[ly1:ly2, lx1:lx2])
+                local_after = np.sum(test_uncovered_mask[ly1:ly2, lx1:lx2])
+
+                # Check for NEW gray pixels vs NO-WARP baseline
+                # Reject if warp exposes areas that were COVERED in the no-warp state
+                # This protects areas like armpits and legs that were fine without warping
+                newly_exposed = test_uncovered_mask & no_warp_covered
+                newly_exposed_count = np.sum(newly_exposed)
+
+                # Only accept if:
+                # 1. LOCAL region improves
+                # 2. Global count improves
+                # 3. No pixels that were covered in no-warp become uncovered
+                if local_after < local_before and test_uncovered < current_uncovered and newly_exposed_count == 0:
                     current_kpts = test_kpts
                     current_uncovered = test_uncovered
                     improved = True
@@ -480,6 +610,145 @@ def run_optimization(
         print(f"\nResults saved to {output_dir / 'optimization_results.json'}")
 
     return results
+
+
+def inpaint_uncovered_areas(
+    base_image: np.ndarray,
+    armor_image: np.ndarray,
+    neck_y: Optional[int] = None,
+    inpaint_radius: int = 3,
+    dilation_radius: int = 2
+) -> np.ndarray:
+    """Fill uncovered areas using inpainting - no transforms at all.
+
+    This approach:
+    1. Identifies gray pixels (base mannequin showing through armor)
+    2. Dilates the mask slightly to ensure smooth blending
+    3. Uses OpenCV inpainting to fill those areas with content matching
+       the surrounding armor colors/patterns
+
+    Args:
+        base_image: Base mannequin RGBA image
+        armor_image: Armor RGBA image (same size, already scaled/aligned)
+        neck_y: If provided, only inpaint below this Y coordinate
+        inpaint_radius: Radius for inpainting algorithm (higher = smoother but slower)
+        dilation_radius: How much to dilate the uncovered mask before inpainting
+
+    Returns:
+        Armor image with uncovered areas filled via inpainting
+    """
+    # Get uncovered mask (base visible but armor doesn't cover)
+    uncovered = get_uncovered_mask(base_image, armor_image, neck_y)
+
+    if not np.any(uncovered):
+        return armor_image  # Nothing to inpaint
+
+    # Dilate the mask slightly for better blending at edges
+    if dilation_radius > 0:
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilation_radius * 2 + 1, dilation_radius * 2 + 1))
+        uncovered_dilated = cv2.dilate(uncovered.astype(np.uint8), kernel, iterations=1).astype(bool)
+    else:
+        uncovered_dilated = uncovered
+
+    # Create inpainting mask (255 where we need to fill)
+    inpaint_mask = (uncovered_dilated.astype(np.uint8)) * 255
+
+    # For inpainting to work well, we need to work on a composite where
+    # the armor is placed on top of the base. We'll inpaint on RGB channels.
+    #
+    # Create composite: base with armor overlaid
+    composite = base_image.copy()
+    armor_alpha = armor_image[:, :, 3:4] / 255.0
+    composite[:, :, :3] = (composite[:, :, :3] * (1 - armor_alpha) +
+                          armor_image[:, :, :3] * armor_alpha).astype(np.uint8)
+
+    # Inpaint the RGB channels
+    # Use TELEA algorithm - good for texture continuation
+    composite_bgr = composite[:, :, :3]
+    inpainted_bgr = cv2.inpaint(composite_bgr, inpaint_mask, inpaint_radius, cv2.INPAINT_TELEA)
+
+    # Create result: original armor + inpainted areas
+    result = armor_image.copy()
+
+    # Where we inpainted, copy from inpainted result and set alpha to 255
+    for c in range(3):
+        result[:, :, c] = np.where(uncovered_dilated, inpainted_bgr[:, :, c], result[:, :, c])
+
+    # Set alpha to 255 for inpainted areas
+    result[:, :, 3] = np.where(uncovered_dilated, 255, result[:, :, 3])
+
+    return result
+
+
+def inpaint_armor_gaps(
+    clothed_image: np.ndarray,
+    clothed_keypoints: np.ndarray,
+    base_image: np.ndarray,
+    base_keypoints: np.ndarray,
+    mask_image: np.ndarray,
+    scale_factor: float = 1.057,
+    inpaint_radius: int = 3,
+    dilation_radius: int = 2
+) -> Tuple[np.ndarray, int, int]:
+    """Full pipeline: scale, align, and inpaint gaps (no TPS warp).
+
+    Args:
+        clothed_image: Original clothed sprite RGBA
+        clothed_keypoints: Keypoints for clothed image [18, 2]
+        base_image: Target base sprite RGBA
+        base_keypoints: Keypoints for base image [18, 2]
+        mask_image: Armor mask (white = armor)
+        scale_factor: Scale factor for clothed image
+        inpaint_radius: Radius for inpainting algorithm
+        dilation_radius: Dilation for inpaint mask edges
+
+    Returns:
+        Tuple of (result_armor, uncovered_before, uncovered_after)
+    """
+    # Scale and align clothed image
+    scaled_clothed, scaled_kpts = scale_and_align_image(
+        clothed_image,
+        clothed_keypoints,
+        base_keypoints,
+        scale_factor
+    )
+
+    # Scale and align mask the same way
+    mask_rgba = np.zeros((*mask_image.shape[:2], 4), dtype=np.uint8)
+    if len(mask_image.shape) == 2:
+        mask_rgba[:, :, 0] = mask_image
+        mask_rgba[:, :, 3] = mask_image
+    else:
+        mask_rgba[:, :, 0] = mask_image[:, :, 0]
+        mask_rgba[:, :, 3] = mask_image[:, :, 0]
+
+    scaled_mask, _ = scale_and_align_image(
+        mask_rgba,
+        clothed_keypoints,
+        base_keypoints,
+        scale_factor
+    )
+
+    # Apply mask to get armor only
+    armor = apply_mask_to_image(scaled_clothed, scaled_mask[:, :, 0])
+
+    # Get neck Y for counting
+    neck_y = int(base_keypoints[1, 1])
+
+    # Count uncovered BEFORE inpainting
+    uncovered_before = count_uncovered_pixels(base_image, armor, neck_y=neck_y)
+
+    # Inpaint uncovered areas
+    inpainted = inpaint_uncovered_areas(
+        base_image, armor, neck_y=neck_y,
+        inpaint_radius=inpaint_radius,
+        dilation_radius=dilation_radius
+    )
+
+    # Count uncovered AFTER inpainting
+    uncovered_after = count_uncovered_pixels(base_image, inpainted, neck_y=neck_y)
+
+    return inpainted, uncovered_before, uncovered_after
 
 
 def save_comparison_images(

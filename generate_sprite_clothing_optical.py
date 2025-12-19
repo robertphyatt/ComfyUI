@@ -44,6 +44,11 @@ def main():
         action="store_true",
         help="Save debug outputs"
     )
+    parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Skip interactive mask validation"
+    )
 
     args = parser.parse_args()
 
@@ -65,7 +70,8 @@ def main():
         output_path=args.output,
         grid_size=grid_size,
         keep_temp=args.keep_temp,
-        debug=args.debug
+        debug=args.debug,
+        skip_validation=args.skip_validation
     )
 
 

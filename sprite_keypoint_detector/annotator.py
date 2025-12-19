@@ -16,14 +16,16 @@ from .keypoints import KEYPOINT_NAMES, NUM_KEYPOINTS, SKELETON_CONNECTIONS, SKEL
 class KeypointAnnotator:
     """Interactive GUI for annotating keypoints on sprite images."""
 
-    def __init__(self, image_path: Path, existing_keypoints: Optional[Dict] = None, auto_predictions: Optional[Dict] = None):
+    def __init__(self, image_path: Path, existing_keypoints: Optional[Dict] = None, auto_predictions: Optional[Dict] = None, always_show_ghosts: bool = False):
         """Initialize annotator.
 
         Args:
             image_path: Path to sprite image
             existing_keypoints: Optional dict of existing keypoint annotations
             auto_predictions: Optional dict of AI-predicted keypoints (shown as ghosts)
+            always_show_ghosts: If True, show ghosts even for manual keypoints
         """
+        self.always_show_ghosts = always_show_ghosts
         self.image_path = Path(image_path)
         self.image = np.array(Image.open(image_path).convert('RGBA'))
 
@@ -126,10 +128,10 @@ class KeypointAnnotator:
         self.point_artists = []
         self.line_artists = []
 
-        # Draw ghost predictions first (for keypoints not yet set)
+        # Draw ghost predictions - always visible when model predictions exist
         for i, pred in enumerate(self.auto_predictions):
-            if pred is not None and self.keypoints[i] is None:
-                # Draw ghost as faded yellow
+            if pred is not None:
+                # Draw ghost as faded yellow (always visible for comparison)
                 size = 100 if i == self.current_keypoint_idx else 50
                 point = self.ax.scatter(pred[0], pred[1], c='yellow', s=size,
                                         marker='o', edgecolors='orange', linewidths=1,

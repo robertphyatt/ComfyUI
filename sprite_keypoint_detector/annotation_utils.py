@@ -16,46 +16,51 @@ from .annotator import KeypointAnnotator
 from .keypoints import KEYPOINT_NAMES
 from .validation import validate_all_annotations
 
-# Import with try/except since these modules may not exist yet
+# Import inference and training modules
 try:
-    from .inference import predict_keypoints
+    from .inference import SpriteKeypointPredictor
+    HAS_INFERENCE = True
 except ImportError:
-    predict_keypoints = None
+    SpriteKeypointPredictor = None
+    HAS_INFERENCE = False
 
 try:
-    from .train import train_model
+    from .train import train
+    HAS_TRAIN = True
 except ImportError:
-    train_model = None
+    train = None
+    HAS_TRAIN = False
 
 
 def retrain_on_manual(
     annotations_path: Path,
     frames_dir: Path,
-    model_output_path: Path
+    model_output_dir: Path
 ) -> None:
     """Retrain keypoint model on manually confirmed annotations only.
 
     Args:
         annotations_path: Path to annotations JSON
         frames_dir: Directory containing frame images
-        model_output_path: Path to save trained model
+        model_output_dir: Directory to save trained model
     """
-    if train_model is None:
+    if not HAS_TRAIN:
         raise ImportError("train module not available - cannot retrain model")
 
     annotations = load_annotations(annotations_path)
 
-    # Filter to only manually annotated keypoints
+    # Filter to only manually annotated keypoints (or legacy format which is assumed manual)
     manual_annotations = {}
     for frame_name, frame_data in annotations.items():
         keypoints = frame_data.get("keypoints", {})
         manual_kpts = {}
         for name, kp in keypoints.items():
-            if isinstance(kp, dict) and kp.get("source") == "manual":
-                manual_kpts[name] = [kp["x"], kp["y"]]
+            if isinstance(kp, dict):
+                if kp.get("source") == "manual":
+                    manual_kpts[name] = [kp["x"], kp["y"]]
             elif isinstance(kp, list):
-                # Legacy format - skip (unknown source)
-                pass
+                # Legacy format - treat as manual
+                manual_kpts[name] = kp
 
         if manual_kpts:
             manual_annotations[frame_name] = {
@@ -73,14 +78,14 @@ def retrain_on_manual(
     with open(train_annotations_path, 'w') as f:
         json.dump(manual_annotations, f, indent=2)
 
-    # Train model
-    train_model(
-        annotations_path=train_annotations_path,
-        frames_dir=frames_dir,
-        output_path=model_output_path
+    # Train model using actual train() function
+    best_model_path = train(
+        annotations_json=train_annotations_path,
+        image_dir=frames_dir,
+        output_dir=model_output_dir
     )
 
-    print(f"Model saved to {model_output_path}")
+    print(f"Model saved to {best_model_path}")
 
 
 def reannotate_auto(
@@ -95,8 +100,11 @@ def reannotate_auto(
         frames_dir: Directory containing frame images
         model_path: Path to trained model
     """
-    if predict_keypoints is None:
+    if not HAS_INFERENCE:
         raise ImportError("inference module not available - cannot reannotate")
+
+    # Load model once
+    predictor = SpriteKeypointPredictor(model_path)
 
     annotations = load_annotations(annotations_path)
 
@@ -107,8 +115,8 @@ def reannotate_auto(
     for frame_path in frame_files:
         frame_name = frame_path.name
 
-        # Run inference
-        predictions = predict_keypoints(frame_path, model_path)
+        # Run inference - returns Dict[str, Tuple[int, int]]
+        predictions = predictor.predict(frame_path)
 
         # Get existing keypoints
         existing = annotations.get(frame_name, {}).get("keypoints", {})
@@ -125,12 +133,12 @@ def reannotate_auto(
 
             # Use prediction
             if name in predictions:
-                pred = predictions[name]
+                x, y = predictions[name]
                 updated_kpts[name] = {
-                    "x": pred["x"],
-                    "y": pred["y"],
+                    "x": x,
+                    "y": y,
                     "source": "auto",
-                    "confidence": pred.get("confidence", 0.5)
+                    "confidence": 0.5  # Default confidence since predictor doesn't return it
                 }
 
         if frame_name not in annotations:
@@ -146,7 +154,8 @@ def reannotate_auto(
 def edit_frame(
     frame_path: Path,
     annotations_path: Path,
-    model_path: Optional[Path] = None
+    model_path: Optional[Path] = None,
+    always_show_ghosts: bool = True
 ) -> None:
     """Manually edit annotations for a single frame with ghost predictions.
 
@@ -154,6 +163,7 @@ def edit_frame(
         frame_path: Path to frame image
         annotations_path: Path to annotations JSON
         model_path: Optional model path for ghost predictions
+        always_show_ghosts: Show ghosts even for manually annotated keypoints
     """
     annotations = load_annotations(annotations_path)
     frame_name = frame_path.name
@@ -163,13 +173,18 @@ def edit_frame(
     # Get auto predictions for ghost overlay
     auto_predictions = None
     if model_path and model_path.exists():
-        if predict_keypoints is None:
+        if not HAS_INFERENCE:
             print("Warning: inference module not available - no ghost predictions")
         else:
-            auto_predictions = predict_keypoints(frame_path, model_path)
+            predictor = SpriteKeypointPredictor(model_path)
+            # predict() returns Dict[str, Tuple[int, int]], convert to expected format
+            raw_predictions = predictor.predict(frame_path)
+            auto_predictions = {}
+            for name, (x, y) in raw_predictions.items():
+                auto_predictions[name] = {"x": x, "y": y, "confidence": 0.5}
 
     # Run annotator
-    annotator = KeypointAnnotator(frame_path, existing, auto_predictions)
+    annotator = KeypointAnnotator(frame_path, existing, auto_predictions, always_show_ghosts)
     result = annotator.run()
 
     if result:
@@ -180,6 +195,43 @@ def edit_frame(
         print(f"Saved annotations for {frame_name}")
     else:
         print("Skipped (no changes saved)")
+
+
+def edit_all(
+    annotations_path: Path,
+    frames_dir: Path,
+    model_path: Optional[Path] = None,
+    pattern: str = "*.png"
+) -> None:
+    """Edit all frames in directory.
+
+    Args:
+        annotations_path: Path to annotations JSON
+        frames_dir: Directory containing frame images
+        model_path: Optional model path for ghost predictions
+        pattern: Glob pattern for frame files (default: *.png)
+    """
+    frame_files = sorted(frames_dir.glob(pattern))
+
+    if not frame_files:
+        print(f"No frames found matching {pattern} in {frames_dir}")
+        return
+
+    print(f"Found {len(frame_files)} frames to annotate")
+
+    for i, frame_path in enumerate(frame_files):
+        print(f"\n[{i+1}/{len(frame_files)}] {frame_path.name}")
+
+        resp = input("  Edit this frame? (Y/n/q): ").strip().lower()
+        if resp == 'q':
+            print("Quitting annotation")
+            break
+        if resp == 'n':
+            continue
+
+        edit_frame(frame_path, annotations_path, model_path)
+
+    print(f"\nAnnotation complete. Reviewed {i+1}/{len(frame_files)} frames.")
 
 
 def edit_flagged(
@@ -233,9 +285,12 @@ def main():
 
     # Retrain command
     retrain_parser = subparsers.add_parser("retrain", help="Retrain model on manual annotations")
-    retrain_parser.add_argument("--annotations", type=Path, required=True)
-    retrain_parser.add_argument("--frames", type=Path, required=True)
-    retrain_parser.add_argument("--output", type=Path, required=True)
+    retrain_parser.add_argument("--annotations", type=Path, required=True,
+                                help="Annotations JSON file")
+    retrain_parser.add_argument("--frames", type=Path, required=True,
+                                help="Directory containing frame images")
+    retrain_parser.add_argument("--output", type=Path, required=True,
+                                help="Output directory for trained model (creates best_model.pth)")
 
     # Reannotate command
     reann_parser = subparsers.add_parser("reannotate", help="Re-run auto annotation")
@@ -245,11 +300,15 @@ def main():
 
     # Edit command
     edit_parser = subparsers.add_parser("edit", help="Manual annotation editor")
-    edit_parser.add_argument("--frame", type=Path, help="Single frame to edit")
-    edit_parser.add_argument("--flagged", action="store_true", help="Edit all flagged frames")
+    edit_group = edit_parser.add_mutually_exclusive_group(required=True)
+    edit_group.add_argument("--frame", type=Path, help="Single frame to edit")
+    edit_group.add_argument("--flagged", action="store_true", help="Edit all flagged frames")
+    edit_group.add_argument("--all", action="store_true", help="Edit all frames in directory")
     edit_parser.add_argument("--annotations", type=Path, required=True)
     edit_parser.add_argument("--frames", type=Path, required=True)
     edit_parser.add_argument("--model", type=Path, help="Model for ghost predictions")
+    edit_parser.add_argument("--pattern", type=str, default="*.png",
+                             help="Glob pattern for --all (default: *.png)")
 
     args = parser.parse_args()
 
@@ -260,10 +319,10 @@ def main():
     elif args.command == "edit":
         if args.flagged:
             edit_flagged(args.annotations, args.frames, args.model)
+        elif args.all:
+            edit_all(args.annotations, args.frames, args.model, args.pattern)
         elif args.frame:
             edit_frame(args.frame, args.annotations, args.model)
-        else:
-            print("Specify --frame or --flagged")
 
 
 if __name__ == "__main__":
