@@ -102,17 +102,22 @@ def remap_frame_to_palette(
 
 
 def quantize_frame(frame: np.ndarray, palette: np.ndarray) -> np.ndarray:
-    """Quantize a frame to use only palette colors.
+    """Quantize a frame to use only palette colors with binary alpha.
 
     This is an alias for remap_frame_to_palette, used for clarity
     when quantizing early in the pipeline vs final cleanup.
+
+    After quantization:
+    - All visible pixels (alpha > 128) use exact palette colors with alpha=255
+    - All other pixels become fully transparent (alpha=0)
+    - No semi-transparent pixels remain
 
     Args:
         frame: BGRA image
         palette: Array of shape (n_colors, 3) with BGR values
 
     Returns:
-        Quantized BGRA image using only palette colors
+        Quantized BGRA image using only palette colors, binary alpha
     """
     return remap_frame_to_palette(frame, palette)
 
