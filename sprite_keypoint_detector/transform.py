@@ -16,6 +16,7 @@ class TransformConfig:
     """Configuration for the transform pipeline."""
     scale_factor: float = 1.057
     rotation_segment_width: int = 35
+    refinement_segment_width: int = 50  # Wider than rotation to capture shoulder/joint areas
     edge_width: int = 2
     pixelize_factor: int = 3
     canvas_size: int = 512
@@ -486,10 +487,10 @@ def refine_silhouette_alignment(
         # Process all limb chains hierarchically
         for chain in LIMB_CHAINS:
             for i, (joint_idx, child_idx, name) in enumerate(chain):
-                # Get segment mask
+                # Get segment mask (use wider refinement width to capture shoulder areas)
                 segment_mask = _get_armor_segment_mask(
                     result, result_kpts, joint_idx, child_idx,
-                    config.rotation_segment_width
+                    config.refinement_segment_width
                 )
 
                 if not np.any(segment_mask):
@@ -501,7 +502,7 @@ def refine_silhouette_alignment(
                     desc_joint, desc_child, _ = chain[j]
                     desc_mask = _get_armor_segment_mask(
                         result, result_kpts, desc_joint, desc_child,
-                        config.rotation_segment_width
+                        config.refinement_segment_width
                     )
                     if np.any(desc_mask):
                         descendant_masks.append(desc_mask)
