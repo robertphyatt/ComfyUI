@@ -52,42 +52,51 @@ def extract_palette(frames: List[np.ndarray], n_colors: int = 16) -> np.ndarray:
     return palette
 
 
-def remap_frame_to_palette(frame: np.ndarray, palette: np.ndarray) -> np.ndarray:
+def remap_frame_to_palette(
+    frame: np.ndarray,
+    palette: np.ndarray,
+    alpha_threshold: int = 128
+) -> np.ndarray:
     """Remap all visible pixels in frame to nearest palette color.
 
-    Uses vectorized numpy operations for performance (100-1000x faster than
-    per-pixel Python loops).
+    Uses vectorized numpy operations for performance. After remapping colors,
+    thresholds alpha to binary (0 or 255) for crisp pixel art.
 
     Args:
         frame: BGRA image
         palette: Array of shape (n_colors, 3) with BGR values
+        alpha_threshold: Pixels with alpha > threshold become opaque (255),
+                        pixels with alpha <= threshold become transparent (0)
 
     Returns:
-        Remapped BGRA image
+        Remapped BGRA image with binary alpha (0 or 255 only)
     """
     result = frame.copy()
     alpha = frame[:, :, 3]
-    mask = alpha > 128  # 50% alpha threshold: treat semi-transparent as background
 
-    # Extract visible pixels: shape (N, 3)
-    visible_pixels = frame[mask][:, :3].astype(np.float32)
+    # Determine which pixels will be visible (above threshold)
+    visible_mask = alpha > alpha_threshold
 
-    if len(visible_pixels) == 0:
-        return result  # No visible pixels to remap
+    # Extract visible pixels for color remapping: shape (N, 3)
+    visible_pixels = frame[visible_mask][:, :3].astype(np.float32)
 
-    # Compute distances to all palette colors using broadcasting
-    # (N, 1, 3) - (1, palette_size, 3) = (N, palette_size, 3)
-    palette_float = palette.astype(np.float32)
-    distances = np.sqrt(np.sum(
-        (visible_pixels[:, np.newaxis, :] - palette_float[np.newaxis, :, :]) ** 2,
-        axis=2
-    ))
+    if len(visible_pixels) > 0:
+        # Compute distances to all palette colors using broadcasting
+        # (N, 1, 3) - (1, palette_size, 3) = (N, palette_size, 3)
+        palette_float = palette.astype(np.float32)
+        distances = np.sqrt(np.sum(
+            (visible_pixels[:, np.newaxis, :] - palette_float[np.newaxis, :, :]) ** 2,
+            axis=2
+        ))
 
-    # Find nearest palette color for each pixel: shape (N,)
-    nearest_indices = np.argmin(distances, axis=1)
+        # Find nearest palette color for each pixel: shape (N,)
+        nearest_indices = np.argmin(distances, axis=1)
 
-    # Remap to palette colors
-    result[mask, :3] = palette[nearest_indices]
+        # Remap to palette colors
+        result[visible_mask, :3] = palette[nearest_indices]
+
+    # Threshold alpha to binary: visible pixels become 255, others become 0
+    result[:, :, 3] = np.where(visible_mask, 255, 0).astype(np.uint8)
 
     return result
 
