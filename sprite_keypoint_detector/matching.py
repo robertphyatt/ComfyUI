@@ -94,38 +94,77 @@ def compute_per_joint_distances(
     return distances
 
 
+# Joint-specific thresholds for matching
+# Arms/shoulders are critical for armor - strict threshold
+# Ankles/toes are less important - looser threshold
+JOINT_THRESHOLDS = {
+    # Critical joints for armor matching (strict)
+    'left_shoulder': 20.0,
+    'right_shoulder': 20.0,
+    'left_elbow': 20.0,
+    'right_elbow': 20.0,
+    'left_wrist': 25.0,
+    'right_wrist': 25.0,
+    'left_fingertip': 30.0,
+    'right_fingertip': 30.0,
+    # Core body (medium)
+    'head': 25.0,
+    'neck': 20.0,
+    'left_hip': 25.0,
+    'right_hip': 25.0,
+    # Legs (medium-loose)
+    'left_knee': 30.0,
+    'right_knee': 30.0,
+    # Feet (loose - less critical for armor)
+    'left_ankle': 40.0,
+    'right_ankle': 40.0,
+    'left_toe': 50.0,
+    'right_toe': 50.0,
+}
+
+
 def exceeds_per_joint_threshold(
     base_keypoints: Dict,
     clothed_keypoints: Dict,
     keypoint_names: List[str],
     max_per_joint: float = 80.0
 ) -> Tuple[bool, Optional[str], float]:
-    """Check if any single joint exceeds the per-joint distance threshold.
+    """Check if any single joint exceeds its distance threshold.
 
-    This catches cases where total distance is acceptable but one limb
-    (e.g., arm) is in a completely different position.
+    Uses joint-specific thresholds from JOINT_THRESHOLDS dict.
+    Arms/shoulders are strict (20px) since they're critical for armor.
+    Ankles/toes are looser (40-50px) since they matter less.
+    Falls back to max_per_joint for unknown joints.
 
     Args:
         base_keypoints: Keypoints dict for base frame
         clothed_keypoints: Keypoints dict for clothed frame
         keypoint_names: List of keypoint names to compare
-        max_per_joint: Maximum allowed distance for any single joint
+        max_per_joint: Default threshold for joints not in JOINT_THRESHOLDS
 
     Returns:
         (exceeds, worst_joint_name, worst_joint_distance)
-        exceeds is True if any joint exceeds threshold
+        exceeds is True if any joint exceeds its threshold
     """
     per_joint = compute_per_joint_distances(base_keypoints, clothed_keypoints, keypoint_names)
 
     worst_joint = None
     worst_dist = 0.0
+    exceeds = False
 
     for name, dist in per_joint.items():
-        if dist > worst_dist and dist != float('inf'):
-            worst_dist = dist
-            worst_joint = name
+        if dist == float('inf'):
+            continue
 
-    exceeds = worst_dist > max_per_joint
+        # Get joint-specific threshold or fall back to default
+        threshold = JOINT_THRESHOLDS.get(name, max_per_joint)
+
+        if dist > threshold:
+            exceeds = True
+            # Track the worst violation (by ratio over threshold)
+            if worst_joint is None or dist > worst_dist:
+                worst_dist = dist
+                worst_joint = name
 
     return exceeds, worst_joint, worst_dist
 
