@@ -153,15 +153,19 @@ def exceeds_per_joint_threshold(
     exceeds = False
 
     for name, dist in per_joint.items():
-        if dist == float('inf'):
-            continue
-
         # Get joint-specific threshold or fall back to default
         threshold = JOINT_THRESHOLDS.get(name, max_per_joint)
 
+        if dist == float('inf'):
+            # Missing critical joints (strict threshold) should fail the check
+            if threshold <= 25.0:
+                return True, name, float('inf')
+            # Allow missing loose joints (ankles, toes)
+            continue
+
         if dist > threshold:
             exceeds = True
-            # Track the worst violation (by ratio over threshold)
+            # Track the worst violation by absolute distance
             if worst_joint is None or dist > worst_dist:
                 worst_dist = dist
                 worst_joint = name
