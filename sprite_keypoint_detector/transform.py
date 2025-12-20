@@ -382,7 +382,13 @@ def _find_optimal_offset(
     descendant_masks: List[np.ndarray],
     max_radius: int = 15
 ) -> Tuple[int, int]:
-    """Find XY offset that minimizes red pixels in segment region.
+    """Find XY offset that minimizes total mismatch (red + blue) in segment region.
+
+    Red = armor outside base silhouette (floating armor)
+    Blue = base uncovered by armor (needs inpainting)
+
+    Minimizing both prevents the optimizer from pushing armor inward
+    (reducing red) at the cost of creating uncovered areas (blue).
 
     Uses gradient descent with 1px steps, checking 8 directions.
 
@@ -396,7 +402,7 @@ def _find_optimal_offset(
     Returns:
         (dx, dy) optimal offset
     """
-    # Combine masks for red pixel counting
+    # Combine masks for pixel counting
     combined_mask = segment_mask.copy()
     for desc_mask in descendant_masks:
         combined_mask = combined_mask | desc_mask
@@ -406,8 +412,14 @@ def _find_optimal_offset(
     # Precompute base visibility
     base_visible = base_image[:, :, 3] > 128
 
-    def count_red_at_offset(dx: int, dy: int) -> int:
-        """Count red pixels if segment were translated by (dx, dy)."""
+    # The region where this segment SHOULD cover: intersection of dilated armor mask
+    # with the base silhouette. This prevents counting blue pixels in areas
+    # where the base doesn't need coverage anyway.
+    segment_region = binary_dilation(combined_mask, iterations=max_radius)
+    relevant_base = base_visible & segment_region
+
+    def count_mismatch_at_offset(dx: int, dy: int) -> int:
+        """Count total mismatch (red + blue) if segment were translated by (dx, dy)."""
         # Translate the combined mask
         if dx == 0 and dy == 0:
             shifted_mask = combined_mask
@@ -420,14 +432,17 @@ def _find_optimal_offset(
                 borderValue=0
             ).astype(bool)
 
-        # Red = shifted armor region outside base
+        # Red = armor outside base (floating armor) - anywhere in segment region
         red = shifted_mask & ~base_visible
-        return int(np.sum(red))
+        # Blue = base uncovered by armor - only where base exists in segment region
+        blue = relevant_base & ~shifted_mask
+
+        return int(np.sum(red)) + int(np.sum(blue))
 
     # Start at origin
     current_offset = (0, 0)
     best_offset = (0, 0)
-    best_red = count_red_at_offset(0, 0)
+    best_mismatch = count_mismatch_at_offset(0, 0)
 
     # 8 directions: cardinal + diagonal
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1),
@@ -444,9 +459,9 @@ def _find_optimal_offset(
             if abs(test_x) > max_radius or abs(test_y) > max_radius:
                 continue
 
-            red = count_red_at_offset(test_x, test_y)
-            if red < best_red:
-                best_red = red
+            mismatch = count_mismatch_at_offset(test_x, test_y)
+            if mismatch < best_mismatch:
+                best_mismatch = mismatch
                 best_offset = (test_x, test_y)
                 current_offset = (test_x, test_y)
                 improved = True
@@ -466,7 +481,10 @@ def refine_silhouette_alignment(
     config: TransformConfig,
     max_iterations: int = 50
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Iteratively refine armor position to minimize red pixels.
+    """Iteratively refine armor position to minimize total silhouette mismatch.
+
+    Minimizes both red (armor outside base) and blue (base uncovered by armor)
+    to find optimal position without creating new uncovered areas.
 
     After rotation aligns bone angles, this step translates limb segments
     to better align armor silhouette with base silhouette.
@@ -485,12 +503,18 @@ def refine_silhouette_alignment(
     result = armor.copy()
     result_kpts = armor_kpts.copy()
 
-    # Count initial red pixels for convergence check
+    # Count initial mismatch (red + blue) for convergence check
     armor_visible = result[:, :, 3] > 128
     base_visible = base_image[:, :, 3] > 128
-    prev_total_red = int(np.sum(armor_visible & ~base_visible))
+    red = armor_visible & ~base_visible  # Armor outside base
+    blue = base_visible & ~armor_visible  # Base uncovered by armor
+    prev_total_mismatch = int(np.sum(red)) + int(np.sum(blue))
 
     for iteration in range(max_iterations):
+        # Save state before this iteration so we can revert if it gets worse
+        prev_result = result.copy()
+        prev_result_kpts = result_kpts.copy()
+
         # Process all limb chains hierarchically
         for chain in LIMB_CHAINS:
             for i, (joint_idx, child_idx, name) in enumerate(chain):
@@ -532,12 +556,17 @@ def refine_silhouette_alignment(
                         desc_joint, desc_child, _ = chain[j]
                         result_kpts[desc_child] = result_kpts[desc_child] + np.array([dx, dy])
 
-        # Check convergence
+        # Check convergence using total mismatch (red + blue)
         armor_visible = result[:, :, 3] > 128
-        total_red = int(np.sum(armor_visible & ~base_visible))
-        if total_red >= prev_total_red:
-            break  # No improvement, stop
-        prev_total_red = total_red
+        red = armor_visible & ~base_visible  # Armor outside base
+        blue = base_visible & ~armor_visible  # Base uncovered by armor
+        total_mismatch = int(np.sum(red)) + int(np.sum(blue))
+        if total_mismatch >= prev_total_mismatch:
+            # Revert to previous state - this iteration made things worse
+            result = prev_result
+            result_kpts = prev_result_kpts
+            break
+        prev_total_mismatch = total_mismatch
 
     return result, result_kpts
 
