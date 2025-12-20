@@ -437,18 +437,18 @@ def _find_optimal_offset(
         # Blue = base uncovered by armor - only where base exists in segment region
         blue = relevant_base & ~shifted_mask
 
-        return int(np.sum(red)) + int(np.sum(blue))
+        return int(np.sum(red)), int(np.sum(blue))
 
     # Start at origin
     current_offset = (0, 0)
     best_offset = (0, 0)
-    best_mismatch = count_mismatch_at_offset(0, 0)
+    best_red, best_blue = count_mismatch_at_offset(0, 0)
 
     # 8 directions: cardinal + diagonal
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1),
                   (-1, -1), (-1, 1), (1, -1), (1, 1)]
 
-    # Gradient descent
+    # Gradient descent - only accept moves where NEITHER red NOR blue increases
     while True:
         improved = False
         for dx, dy in directions:
@@ -459,9 +459,11 @@ def _find_optimal_offset(
             if abs(test_x) > max_radius or abs(test_y) > max_radius:
                 continue
 
-            mismatch = count_mismatch_at_offset(test_x, test_y)
-            if mismatch < best_mismatch:
-                best_mismatch = mismatch
+            test_red, test_blue = count_mismatch_at_offset(test_x, test_y)
+            # Only accept if BOTH red and blue don't increase, and at least one improves
+            if test_red <= best_red and test_blue <= best_blue and (test_red < best_red or test_blue < best_blue):
+                best_red = test_red
+                best_blue = test_blue
                 best_offset = (test_x, test_y)
                 current_offset = (test_x, test_y)
                 improved = True
@@ -503,12 +505,11 @@ def refine_silhouette_alignment(
     result = armor.copy()
     result_kpts = armor_kpts.copy()
 
-    # Count initial mismatch (red + blue) for convergence check
+    # Count initial red/blue for convergence check
     armor_visible = result[:, :, 3] > 128
     base_visible = base_image[:, :, 3] > 128
-    red = armor_visible & ~base_visible  # Armor outside base
-    blue = base_visible & ~armor_visible  # Base uncovered by armor
-    prev_total_mismatch = int(np.sum(red)) + int(np.sum(blue))
+    prev_red = int(np.sum(armor_visible & ~base_visible))
+    prev_blue = int(np.sum(base_visible & ~armor_visible))
 
     for iteration in range(max_iterations):
         # Save state before this iteration so we can revert if it gets worse
@@ -556,17 +557,23 @@ def refine_silhouette_alignment(
                         desc_joint, desc_child, _ = chain[j]
                         result_kpts[desc_child] = result_kpts[desc_child] + np.array([dx, dy])
 
-        # Check convergence using total mismatch (red + blue)
+        # Check convergence - neither red nor blue should increase
         armor_visible = result[:, :, 3] > 128
-        red = armor_visible & ~base_visible  # Armor outside base
-        blue = base_visible & ~armor_visible  # Base uncovered by armor
-        total_mismatch = int(np.sum(red)) + int(np.sum(blue))
-        if total_mismatch >= prev_total_mismatch:
-            # Revert to previous state - this iteration made things worse
+        curr_red = int(np.sum(armor_visible & ~base_visible))
+        curr_blue = int(np.sum(base_visible & ~armor_visible))
+
+        # Revert if either red or blue increased
+        if curr_red > prev_red or curr_blue > prev_blue:
             result = prev_result
             result_kpts = prev_result_kpts
             break
-        prev_total_mismatch = total_mismatch
+
+        # Stop if no improvement in either metric
+        if curr_red >= prev_red and curr_blue >= prev_blue:
+            break
+
+        prev_red = curr_red
+        prev_blue = curr_blue
 
     return result, result_kpts
 
