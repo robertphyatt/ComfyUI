@@ -312,40 +312,24 @@ def _get_armor_segment_mask(
     return armor_visible & segment_region
 
 
-def _translate_segment(
+def _apply_translation(
     armor: np.ndarray,
-    keypoints: np.ndarray,
-    segment_mask: np.ndarray,
-    offset: Tuple[int, int],
-    descendant_masks: List[np.ndarray]
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Translate armor pixels in segment and all descendants by offset.
-
-    Note: This function only translates pixels, not keypoints. The caller
-    is responsible for updating keypoints after translation.
+    combined_mask: np.ndarray,
+    offset: Tuple[int, int]
+) -> np.ndarray:
+    """Apply translation to masked pixels.
 
     Args:
         armor: Armor RGBA image
-        keypoints: Current keypoints array (returned unchanged)
-        segment_mask: Boolean mask of segment pixels to move
+        combined_mask: Boolean mask of pixels to move
         offset: (dx, dy) translation offset
-        descendant_masks: List of masks for descendant segments (also moved)
 
     Returns:
-        (translated_armor, keypoints_copy)
+        Translated armor image
     """
     dx, dy = offset
-    if dx == 0 and dy == 0:
-        return armor, keypoints
-
     h, w = armor.shape[:2]
     result = armor.copy()
-    result_kpts = keypoints.copy()
-
-    # Combine segment mask with all descendant masks
-    combined_mask = segment_mask.copy()
-    for desc_mask in descendant_masks:
-        combined_mask = combined_mask | desc_mask
 
     # Extract pixels to move
     pixels_to_move = np.zeros_like(armor)
@@ -372,107 +356,92 @@ def _translate_segment(
                           result[:, :, c] * (1 - trans_alpha[:, :, 0])).astype(np.uint8)
     result[:, :, 3] = np.maximum(result[:, :, 3], translated[:, :, 3])
 
-    return result, result_kpts
+    return result
 
 
-def _find_optimal_offset(
+def _translate_segment(
     armor: np.ndarray,
-    base_image: np.ndarray,
+    keypoints: np.ndarray,
     segment_mask: np.ndarray,
-    descendant_masks: List[np.ndarray],
-    max_radius: int = 15
-) -> Tuple[int, int]:
-    """Find XY offset that minimizes total mismatch (red + blue) in segment region.
+    offset: Tuple[int, int],
+    descendant_masks: List[np.ndarray]
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Translate armor pixels in segment and all descendants by offset.
 
-    Red = armor outside base silhouette (floating armor)
-    Blue = base uncovered by armor (needs inpainting)
-
-    Minimizing both prevents the optimizer from pushing armor inward
-    (reducing red) at the cost of creating uncovered areas (blue).
-
-    Uses gradient descent with 1px steps, checking 8 directions.
+    Note: This function only translates pixels, not keypoints. The caller
+    is responsible for updating keypoints after translation.
 
     Args:
         armor: Armor RGBA image
-        base_image: Base frame RGBA image
-        segment_mask: Boolean mask of segment's armor pixels
-        descendant_masks: Masks of descendant segments (moved together)
-        max_radius: Maximum offset in any direction
+        keypoints: Current keypoints array (returned unchanged)
+        segment_mask: Boolean mask of segment pixels to move
+        offset: (dx, dy) translation offset
+        descendant_masks: List of masks for descendant segments (also moved)
 
     Returns:
-        (dx, dy) optimal offset
+        (translated_armor, keypoints_copy)
     """
-    # Combine masks for pixel counting
+    dx, dy = offset
+    if dx == 0 and dy == 0:
+        return armor, keypoints
+
+    # Combine segment mask with all descendant masks
     combined_mask = segment_mask.copy()
     for desc_mask in descendant_masks:
         combined_mask = combined_mask | desc_mask
 
-    h, w = armor.shape[:2]
+    result = _apply_translation(armor, combined_mask, offset)
+    return result, keypoints.copy()
 
-    # Precompute base visibility
+
+def _try_1px_move(
+    armor: np.ndarray,
+    base_image: np.ndarray,
+    segment_mask: np.ndarray,
+    descendant_masks: List[np.ndarray],
+    prev_red: int,
+    prev_blue: int
+) -> Tuple[Tuple[int, int], int, int]:
+    """Try 1px moves in 8 directions, return first that improves global metrics.
+
+    Args:
+        armor: Current armor RGBA image
+        base_image: Base frame RGBA image
+        segment_mask: Mask of pixels in this segment
+        descendant_masks: Masks of descendant segments (moved together)
+        prev_red: Current global red pixel count
+        prev_blue: Current global blue pixel count
+
+    Returns:
+        ((dx, dy), new_red, new_blue) - the move and resulting metrics
+        ((0, 0), prev_red, prev_blue) if no valid move found
+    """
     base_visible = base_image[:, :, 3] > 128
 
-    # The region where this segment SHOULD cover: intersection of dilated armor mask
-    # with the base silhouette. This prevents counting blue pixels in areas
-    # where the base doesn't need coverage anyway.
-    segment_region = binary_dilation(combined_mask, iterations=max_radius)
-    relevant_base = base_visible & segment_region
-
-    def count_mismatch_at_offset(dx: int, dy: int) -> int:
-        """Count total mismatch (red + blue) if segment were translated by (dx, dy)."""
-        # Translate the combined mask
-        if dx == 0 and dy == 0:
-            shifted_mask = combined_mask
-        else:
-            M = np.float32([[1, 0, dx], [0, 1, dy]])
-            shifted_mask = cv2.warpAffine(
-                combined_mask.astype(np.uint8), M, (w, h),
-                flags=cv2.INTER_NEAREST,
-                borderMode=cv2.BORDER_CONSTANT,
-                borderValue=0
-            ).astype(bool)
-
-        # Red = armor outside base (floating armor) - anywhere in segment region
-        red = shifted_mask & ~base_visible
-        # Blue = base uncovered by armor - only where base exists in segment region
-        blue = relevant_base & ~shifted_mask
-
-        return int(np.sum(red)), int(np.sum(blue))
-
-    # Start at origin
-    current_offset = (0, 0)
-    best_offset = (0, 0)
-    best_red, best_blue = count_mismatch_at_offset(0, 0)
+    # Combine segment mask with descendants
+    combined_mask = segment_mask.copy()
+    for desc_mask in descendant_masks:
+        combined_mask = combined_mask | desc_mask
 
     # 8 directions: cardinal + diagonal
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1),
                   (-1, -1), (-1, 1), (1, -1), (1, 1)]
 
-    # Gradient descent - only accept moves where NEITHER red NOR blue increases
-    while True:
-        improved = False
-        for dx, dy in directions:
-            test_x = current_offset[0] + dx
-            test_y = current_offset[1] + dy
+    for dx, dy in directions:
+        # Try this translation
+        test_armor = _apply_translation(armor, combined_mask, (dx, dy))
 
-            # Check bounds
-            if abs(test_x) > max_radius or abs(test_y) > max_radius:
-                continue
+        # Check global metrics
+        armor_visible = test_armor[:, :, 3] > 128
+        new_red = int(np.sum(armor_visible & ~base_visible))
+        new_blue = int(np.sum(base_visible & ~armor_visible))
 
-            test_red, test_blue = count_mismatch_at_offset(test_x, test_y)
-            # Only accept if BOTH red and blue don't increase, and at least one improves
-            if test_red <= best_red and test_blue <= best_blue and (test_red < best_red or test_blue < best_blue):
-                best_red = test_red
-                best_blue = test_blue
-                best_offset = (test_x, test_y)
-                current_offset = (test_x, test_y)
-                improved = True
-                break  # Greedy: take first improvement
+        # Accept if neither increased AND at least one improved
+        if new_red <= prev_red and new_blue <= prev_blue and (new_red < prev_red or new_blue < prev_blue):
+            return (dx, dy), new_red, new_blue
 
-        if not improved:
-            break  # Local minimum reached
-
-    return best_offset
+    # No valid move found
+    return (0, 0), prev_red, prev_blue
 
 
 def refine_silhouette_alignment(
@@ -481,23 +450,22 @@ def refine_silhouette_alignment(
     base_image: np.ndarray,
     base_kpts: np.ndarray,
     config: TransformConfig,
-    max_iterations: int = 50
+    max_iterations: int = 50  # Unused, kept for API compatibility
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Iteratively refine armor position to minimize total silhouette mismatch.
+    """Iteratively refine armor position using greedy 1px per-segment moves.
 
-    Minimizes both red (armor outside base) and blue (base uncovered by armor)
-    to find optimal position without creating new uncovered areas.
-
-    After rotation aligns bone angles, this step translates limb segments
-    to better align armor silhouette with base silhouette.
+    Each segment attempts one 1px move per round. Moves are accepted only if
+    global red AND blue don't increase (and at least one improves). Parent
+    segments cascade movement to children. Loop continues until no segment
+    can make a valid move.
 
     Args:
         armor: Rotated armor RGBA image
         armor_kpts: Armor keypoints after rotation
         base_image: Base frame RGBA image
-        base_kpts: Base frame keypoints
+        base_kpts: Base frame keypoints (unused, kept for API compatibility)
         config: Transform configuration
-        max_iterations: Maximum refinement passes
+        max_iterations: Unused, kept for API compatibility
 
     Returns:
         (refined_armor, refined_keypoints)
@@ -505,16 +473,15 @@ def refine_silhouette_alignment(
     result = armor.copy()
     result_kpts = armor_kpts.copy()
 
-    # Count initial red/blue for convergence check
-    armor_visible = result[:, :, 3] > 128
+    # Compute initial global metrics
     base_visible = base_image[:, :, 3] > 128
-    prev_red = int(np.sum(armor_visible & ~base_visible))
-    prev_blue = int(np.sum(base_visible & ~armor_visible))
+    armor_visible = result[:, :, 3] > 128
+    curr_red = int(np.sum(armor_visible & ~base_visible))
+    curr_blue = int(np.sum(base_visible & ~armor_visible))
 
-    for iteration in range(max_iterations):
-        # Save state before this iteration so we can revert if it gets worse
-        prev_result = result.copy()
-        prev_result_kpts = result_kpts.copy()
+    # Loop until no segment can improve
+    while True:
+        any_moved = False
 
         # Process all limb chains hierarchically
         for chain in LIMB_CHAINS:
@@ -539,13 +506,14 @@ def refine_silhouette_alignment(
                     if np.any(desc_mask):
                         descendant_masks.append(desc_mask)
 
-                # Find optimal offset for this segment
-                offset = _find_optimal_offset(
-                    result, base_image, segment_mask, descendant_masks
+                # Try 1px move in each direction
+                offset, new_red, new_blue = _try_1px_move(
+                    result, base_image, segment_mask, descendant_masks,
+                    curr_red, curr_blue
                 )
 
                 if offset != (0, 0):
-                    # Apply translation to segment and descendants
+                    # Apply the move
                     result, result_kpts = _translate_segment(
                         result, result_kpts, segment_mask, offset, descendant_masks
                     )
@@ -557,23 +525,14 @@ def refine_silhouette_alignment(
                         desc_joint, desc_child, _ = chain[j]
                         result_kpts[desc_child] = result_kpts[desc_child] + np.array([dx, dy])
 
-        # Check convergence - neither red nor blue should increase
-        armor_visible = result[:, :, 3] > 128
-        curr_red = int(np.sum(armor_visible & ~base_visible))
-        curr_blue = int(np.sum(base_visible & ~armor_visible))
+                    # Update metrics
+                    curr_red = new_red
+                    curr_blue = new_blue
+                    any_moved = True
 
-        # Revert if either red or blue increased
-        if curr_red > prev_red or curr_blue > prev_blue:
-            result = prev_result
-            result_kpts = prev_result_kpts
+        # If no segment moved this round, we're converged
+        if not any_moved:
             break
-
-        # Stop if no improvement in either metric
-        if curr_red >= prev_red and curr_blue >= prev_blue:
-            break
-
-        prev_red = curr_red
-        prev_blue = curr_blue
 
     return result, result_kpts
 
