@@ -58,3 +58,58 @@ def discretize_canonical(
         (grid_x, grid_y) discrete grid position
     """
     return (int(round(x / resolution)), int(round(y / resolution)))
+
+
+def get_segment_pixels_with_positions(
+    frame: np.ndarray,
+    keypoints: np.ndarray,
+    joint_a_idx: int,
+    joint_b_idx: int,
+    segment_width: int = 50
+) -> List[Tuple[Tuple[int, int], Tuple[int, int]]]:
+    """Get visible pixels in segment with their canonical grid positions.
+
+    Args:
+        frame: RGBA frame
+        keypoints: Keypoint array (14 joints)
+        joint_a_idx: Index of joint A
+        joint_b_idx: Index of joint B
+        segment_width: Width of segment region in pixels
+
+    Returns:
+        List of ((pixel_x, pixel_y), (grid_x, grid_y)) tuples
+    """
+    h, w = frame.shape[:2]
+    joint_a = keypoints[joint_a_idx]
+    joint_b = keypoints[joint_b_idx]
+
+    seg_vec = joint_b - joint_a
+    seg_len = np.linalg.norm(seg_vec)
+    if seg_len < 1:
+        return []
+
+    seg_unit = seg_vec / seg_len
+    perp = np.array([-seg_unit[1], seg_unit[0]])
+
+    results = []
+    half_width = segment_width / 2
+
+    for y in range(h):
+        for x in range(w):
+            if frame[y, x, 3] <= 128:
+                continue
+
+            to_pixel = np.array([x, y], dtype=float) - joint_a
+            along = np.dot(to_pixel, seg_unit)
+            across = np.dot(to_pixel, perp)
+
+            if along < 0 or along > seg_len or abs(across) > half_width:
+                continue
+
+            cx = along / seg_len
+            cy = across / seg_len
+            gx, gy = discretize_canonical(cx, cy)
+
+            results.append(((x, y), (gx, gy)))
+
+    return results
