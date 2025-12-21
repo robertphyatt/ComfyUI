@@ -148,7 +148,8 @@ class ClothingPipeline:
         config: Optional[TransformConfig] = None,
         base_spritesheet_path: Optional[Path] = None,
         reference_spritesheet_path: Optional[Path] = None,
-        frames_dir: Optional[Path] = None
+        frames_dir: Optional[Path] = None,
+        palette_from: Optional[Path] = None
     ):
         """Initialize pipeline from either spritesheets or frame directory.
 
@@ -160,11 +161,13 @@ class ClothingPipeline:
             base_spritesheet_path: Path to base spritesheet (spritesheet mode)
             reference_spritesheet_path: Path to clothed spritesheet (spritesheet mode)
             frames_dir: Directory containing individual frames (directory mode)
+            palette_from: Path to previous output directory to reuse palette from
         """
         self.annotations_path = Path(annotations_path)
         self.masks_dir = Path(masks_dir)
         self.output_dir = Path(output_dir)
         self.config = config or TransformConfig()
+        self.palette_from = palette_from
 
         # Create output directories
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -357,13 +360,18 @@ class ClothingPipeline:
             (debug_dir / "overlap").mkdir(exist_ok=True)
             (debug_dir / "skeleton").mkdir(exist_ok=True)
 
-        # === Early Palette Quantization ===
-        # Extract global palette from all clothed frames for consistent colors
-        print("\n=== Extracting Global Palette ===")
-
-        # Use pre-loaded clothed frames for palette extraction
-        global_palette = extract_palette(self.reference_frames, n_colors=16)
-        print(f"  Extracted {len(global_palette)}-color global palette")
+        # === Extract or Load Palette ===
+        if self.palette_from:
+            print(f"\n=== Loading Palette from {self.palette_from} ===")
+            palette_path = self.palette_from / "debug" / "palette.png"
+            from .color_correction import load_palette_from_image
+            global_palette = load_palette_from_image(palette_path)
+            print(f"  Loaded {len(global_palette)}-color palette from {palette_path}")
+        else:
+            print("\n=== Extracting Global Palette ===")
+            # Use pre-loaded clothed frames for palette extraction
+            global_palette = extract_palette(self.reference_frames, n_colors=16)
+            print(f"  Extracted {len(global_palette)}-color global palette")
 
         # Save palette visualization early
         if debug:
@@ -600,6 +608,8 @@ def main():
                        help="Scale factor for clothed frames")
     parser.add_argument("--pixelize", type=int, default=3,
                        help="Pixelization factor (1=none)")
+    parser.add_argument("--palette-from", type=Path,
+                       help="Reuse palette from previous output directory (loads debug/palette.png)")
     parser.add_argument("--debug", action="store_true",
                        help="Save intermediate step outputs for each frame")
 
@@ -623,7 +633,8 @@ def main():
         config=config,
         base_spritesheet_path=args.base,
         reference_spritesheet_path=args.reference,
-        frames_dir=args.frames_dir
+        frames_dir=args.frames_dir,
+        palette_from=args.palette_from
     )
 
     success = pipeline.run(skip_validation=args.skip_validation, debug=args.debug)
