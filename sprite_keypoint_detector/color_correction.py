@@ -166,3 +166,41 @@ def save_palette_image(palette: np.ndarray, path: Path) -> None:
         img[y1:y2, x1:x2] = color
 
     cv2.imwrite(str(path), img)
+
+
+def load_palette_from_image(path: Path) -> np.ndarray:
+    """Load palette from a swatch image.
+
+    Parses a 4x4 grid of 32x32 color swatches back to palette array.
+
+    Args:
+        path: Path to palette swatch image (128x128 PNG)
+
+    Returns:
+        Palette array of shape (16, 3) with BGR values
+
+    Raises:
+        FileNotFoundError: If palette image doesn't exist
+        ValueError: If image format is invalid
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"Palette not found: {path}")
+
+    img = cv2.imread(str(path), cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError(f"Failed to read palette image: {path}")
+
+    if img.shape[0] < 128 or img.shape[1] < 128:
+        raise ValueError(f"Palette image too small: {img.shape}, expected at least 128x128")
+
+    # Sample center of each 32x32 swatch cell
+    swatch_size = 32
+    palette = []
+    for row in range(4):
+        for col in range(4):
+            center_y = row * swatch_size + swatch_size // 2
+            center_x = col * swatch_size + swatch_size // 2
+            color = img[center_y, center_x]
+            palette.append(color)
+
+    return np.array(palette, dtype=np.uint8)
