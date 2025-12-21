@@ -44,6 +44,7 @@ from .spritesheet import (
 )
 from .keypoints import KEYPOINT_NAMES
 from .color_correction import extract_palette, remap_frame_to_palette, save_palette_image, quantize_frame
+from .consistency import generate_consistency_mask
 
 
 def create_debug_comparison(debug_dir: Path, frame_idx: int) -> np.ndarray:
@@ -65,6 +66,7 @@ def create_debug_comparison(debug_dir: Path, frame_idx: int) -> np.ndarray:
         ("post_refine_overlap", "Post-Refine"),
         ("5_inpainted", "Inpainted"),
         ("6_final", "Final"),
+        ("7_consistency", "Consistency"),
         ("overlap", "Overlap"),
         ("skeleton", "Skeleton"),
     ]
@@ -456,6 +458,37 @@ class ClothingPipeline:
             for i, (final, base_idx) in enumerate(zip(final_frames, frame_indices)):
                 cv2.imwrite(str(debug_dir / "6_final" / f"frame_{base_idx:02d}.png"), final)
             print(f"  Saved final frames to debug/6_final/")
+
+            # === Generate Frame Consistency Masks ===
+            print("\n=== Generating Frame Consistency Masks ===")
+            (debug_dir / "7_consistency").mkdir(exist_ok=True)
+
+            # Generate consistency masks for sequential frame pairs
+            for i in range(len(final_frames)):
+                # Use base skeleton keypoints for consistency checking
+                base_idx_n = frame_indices[i]
+                base_name_n = f"base_frame_{base_idx_n:02d}.png"
+                keypoints_n = get_keypoints_array(base_annotations[base_name_n].get("keypoints", {}))
+
+                # Determine next frame index (loop to first frame for last frame)
+                next_i = (i + 1) % len(final_frames)
+                base_idx_n1 = frame_indices[next_i]
+                base_name_n1 = f"base_frame_{base_idx_n1:02d}.png"
+                keypoints_n1 = get_keypoints_array(base_annotations[base_name_n1].get("keypoints", {}))
+
+                # Generate consistency mask
+                consistency_mask = generate_consistency_mask(
+                    final_frames[i],
+                    final_frames[next_i],
+                    keypoints_n,
+                    keypoints_n1,
+                    global_palette
+                )
+
+                # Save with same naming as source frame
+                cv2.imwrite(str(debug_dir / "7_consistency" / f"frame_{base_idx_n:02d}.png"), consistency_mask)
+
+            print(f"  Generated consistency masks for {len(final_frames)} frame pairs")
 
         # Save individual frames
         save_frames(final_frames, self.output_dir / "frames", prefix="clothing")
