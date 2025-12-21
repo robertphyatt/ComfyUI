@@ -2,11 +2,15 @@
 
 import numpy as np
 from typing import Tuple, List
-import cv2
-from math import atan2, cos, sin
+from math import atan2, cos, sin, pi
 
 
-# Bone segments: (joint_a_idx, joint_b_idx, name)
+# Bone segments for 14-keypoint skeleton format
+# Keypoint indices: 0=head, 1=neck, 2=l_shoulder, 3=r_shoulder,
+#                   4=l_elbow, 5=r_elbow, 6=l_wrist, 7=r_wrist,
+#                   8=l_hip, 9=r_hip, 10=l_knee, 11=r_knee,
+#                   12=l_ankle, 13=r_ankle
+# Format: (joint_a_idx, joint_b_idx, name)
 BONE_SEGMENTS = [
     (1, 0, "head_neck"),
     (2, 4, "l_upper_arm"),
@@ -51,6 +55,12 @@ def compute_segment_transform(
     angle_n = atan2(joint_b_n[1] - joint_a_n[1], joint_b_n[0] - joint_a_n[0])
     angle_n1 = atan2(joint_b_n1[1] - joint_a_n1[1], joint_b_n1[0] - joint_a_n1[0])
     rotation = angle_n1 - angle_n
+
+    # Normalize rotation to [-pi, pi] to handle wrap-around
+    if rotation > pi:
+        rotation -= 2 * pi
+    elif rotation < -pi:
+        rotation += 2 * pi
 
     return translation, rotation, mid_n
 
