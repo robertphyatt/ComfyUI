@@ -5,6 +5,7 @@ palette index for each position, and corrects outliers to match consensus.
 """
 
 import numpy as np
+from collections import Counter
 from typing import Dict, List, Tuple
 from .consistency import BONE_SEGMENTS, find_palette_index
 
@@ -113,3 +114,48 @@ def get_segment_pixels_with_positions(
             results.append(((x, y), (gx, gy)))
 
     return results
+
+
+def build_consensus_map(
+    frames: List[np.ndarray],
+    keypoints_per_frame: List[np.ndarray],
+    palette: np.ndarray,
+    segment_width: int = 50
+) -> Dict[Tuple[int, int, int], int]:
+    """Build consensus palette index for each segment grid position.
+
+    Collects votes from all frames, returns plurality winner for each position.
+
+    Args:
+        frames: List of RGBA frames
+        keypoints_per_frame: Keypoints for each frame
+        palette: Color palette (n_colors, 3) BGR
+        segment_width: Width for segment regions
+
+    Returns:
+        Dict mapping (segment_idx, grid_x, grid_y) -> consensus palette index
+    """
+    votes: Dict[Tuple[int, int, int], List[int]] = {}
+
+    for frame, keypoints in zip(frames, keypoints_per_frame):
+        for seg_idx, (joint_a_idx, joint_b_idx, name) in enumerate(BONE_SEGMENTS):
+            pixels_with_positions = get_segment_pixels_with_positions(
+                frame, keypoints, joint_a_idx, joint_b_idx, segment_width
+            )
+
+            for (px, py), (gx, gy) in pixels_with_positions:
+                key = (seg_idx, gx, gy)
+                color = frame[py, px, :3]
+                palette_idx = find_palette_index(color, palette)
+
+                if key not in votes:
+                    votes[key] = []
+                votes[key].append(palette_idx)
+
+    consensus_map = {}
+    for key, idx_list in votes.items():
+        counter = Counter(idx_list)
+        winner = counter.most_common(1)[0][0]
+        consensus_map[key] = winner
+
+    return consensus_map
