@@ -159,3 +159,53 @@ def build_consensus_map(
         consensus_map[key] = winner
 
     return consensus_map
+
+
+def apply_consensus_correction(
+    frames: List[np.ndarray],
+    keypoints_per_frame: List[np.ndarray],
+    palette: np.ndarray,
+    consensus_map: Dict[Tuple[int, int, int], int],
+    segment_width: int = 50
+) -> Tuple[List[np.ndarray], int]:
+    """Apply consensus colors to all frames.
+
+    Args:
+        frames: List of RGBA frames
+        keypoints_per_frame: Keypoints for each frame
+        palette: Color palette (n_colors, 3) BGR
+        consensus_map: Mapping from (segment_idx, grid_x, grid_y) to palette index
+        segment_width: Width for segment regions
+
+    Returns:
+        (corrected_frames, total_corrections) tuple
+    """
+    corrected = [frame.copy() for frame in frames]
+    total_corrections = 0
+
+    for frame_idx, (frame, keypoints) in enumerate(zip(frames, keypoints_per_frame)):
+        processed = set()
+
+        for seg_idx, (joint_a_idx, joint_b_idx, name) in enumerate(BONE_SEGMENTS):
+            pixels_with_positions = get_segment_pixels_with_positions(
+                frame, keypoints, joint_a_idx, joint_b_idx, segment_width
+            )
+
+            for (px, py), (gx, gy) in pixels_with_positions:
+                if (px, py) in processed:
+                    continue
+                processed.add((px, py))
+
+                key = (seg_idx, gx, gy)
+                if key not in consensus_map:
+                    continue
+
+                consensus_idx = consensus_map[key]
+                current_color = frame[py, px, :3]
+                current_idx = find_palette_index(current_color, palette)
+
+                if current_idx != consensus_idx:
+                    corrected[frame_idx][py, px, :3] = palette[consensus_idx]
+                    total_corrections += 1
+
+    return corrected, total_corrections
