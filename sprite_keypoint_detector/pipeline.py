@@ -68,7 +68,6 @@ def create_debug_comparison(debug_dir: Path, frame_idx: int) -> np.ndarray:
         ("5_inpainted", "Inpainted"),
         ("6_final", "Final"),
         ("7_consistency", "Consistency"),
-        ("8_consensus", "Consensus"),
         ("overlap", "Overlap"),
         ("skeleton", "Skeleton"),
     ]
@@ -442,6 +441,25 @@ class ClothingPipeline:
 
             print(f"  Generated frame {base_idx:02d} from {match.matched_clothed_frame}")
 
+        # === Apply Color Consensus Correction (before pixelization) ===
+        print("\n=== Applying Color Consensus Correction ===")
+
+        # Collect keypoints for all frames
+        all_keypoints = []
+        for base_idx in frame_indices:
+            base_name = f"base_frame_{base_idx:02d}.png"
+            keypoints = get_keypoints_array(base_annotations[base_name].get("keypoints", {}))
+            all_keypoints.append(keypoints)
+
+        # Build consensus and apply corrections to pre-pixelized frames
+        consensus_map = build_consensus_map(inpainted_frames, all_keypoints, global_palette)
+        print(f"  Built consensus map with {len(consensus_map)} positions")
+
+        inpainted_frames, num_corrections = apply_consensus_correction(
+            inpainted_frames, all_keypoints, global_palette, consensus_map
+        )
+        print(f"  Applied {num_corrections} color corrections")
+
         # === Pixelization ===
         print("\n=== Applying Pixelization ===")
         final_frames = []
@@ -491,31 +509,6 @@ class ClothingPipeline:
                 cv2.imwrite(str(debug_dir / "7_consistency" / f"frame_{base_idx_n:02d}.png"), consistency_mask)
 
             print(f"  Generated consistency masks for {len(final_frames)} frame pairs")
-
-        # === Apply Color Consensus Correction ===
-        print("\n=== Applying Color Consensus Correction ===")
-
-        # Collect keypoints for all frames (reuse from consistency generation)
-        all_keypoints = []
-        for base_idx in frame_indices:
-            base_name = f"base_frame_{base_idx:02d}.png"
-            keypoints = get_keypoints_array(base_annotations[base_name].get("keypoints", {}))
-            all_keypoints.append(keypoints)
-
-        # Build consensus and apply corrections
-        consensus_map = build_consensus_map(final_frames, all_keypoints, global_palette)
-        print(f"  Built consensus map with {len(consensus_map)} positions")
-
-        final_frames, num_corrections = apply_consensus_correction(
-            final_frames, all_keypoints, global_palette, consensus_map
-        )
-        print(f"  Applied {num_corrections} color corrections")
-
-        if debug:
-            (debug_dir / "8_consensus").mkdir(exist_ok=True)
-            for i, base_idx in enumerate(frame_indices):
-                cv2.imwrite(str(debug_dir / "8_consensus" / f"frame_{base_idx:02d}.png"), final_frames[i])
-            print(f"  Saved corrected frames to debug/8_consensus/")
 
         # Save individual frames
         save_frames(final_frames, self.output_dir / "frames", prefix="clothing")
