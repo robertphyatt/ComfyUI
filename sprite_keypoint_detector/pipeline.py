@@ -288,7 +288,8 @@ class ClothingPipeline:
                 clothed_kpts_array = get_keypoints_array(clothed_kpts)
                 base_kpts_array = get_keypoints_array(base_kpts)
 
-                transformed = transform_frame(
+                # For matching/scoring, we don't use anchor offset - each candidate evaluated independently
+                transformed, _ = transform_frame(
                     clothed_frame, clothed_kpts_array,
                     base_frame, base_kpts_array,
                     mask, self.config
@@ -378,6 +379,10 @@ class ClothingPipeline:
             save_palette_image(global_palette, debug_dir / "palette.png")
             print(f"  Saved palette visualization to debug/palette.png")
 
+        # Track anchor offset from frame 0 for consistent positioning across all frames
+        # This prevents per-frame jiggle caused by keypoint variations
+        anchor_offset = None
+
         for match in matches:
             base_idx = int(match.base_frame.split("_")[-1].replace(".png", ""))
             clothed_idx = int(match.matched_clothed_frame.split("_")[-1].replace(".png", ""))
@@ -418,10 +423,11 @@ class ClothingPipeline:
 
             if debug:
                 # Use debug transform to get all intermediate steps
-                debug_output = transform_frame_debug(
+                debug_output, offset_used = transform_frame_debug(
                     clothed_frame, clothed_kpts,
                     base_frame, base_kpts,
-                    mask, frame_config
+                    mask, frame_config,
+                    anchor_offset  # None for first frame, then reuse frame 0's offset
                 )
 
                 # Save intermediate outputs (up to inpainted - color correction and final come later)
@@ -438,12 +444,18 @@ class ClothingPipeline:
                 inpainted_frames.append(debug_output.final_armor)
             else:
                 # Normal transform
-                transformed = transform_frame(
+                transformed, offset_used = transform_frame(
                     clothed_frame, clothed_kpts,
                     base_frame, base_kpts,
-                    mask, frame_config
+                    mask, frame_config,
+                    anchor_offset  # None for first frame, then reuse frame 0's offset
                 )
                 inpainted_frames.append(transformed)
+
+            # Capture frame 0's offset as anchor for all subsequent frames
+            if anchor_offset is None:
+                anchor_offset = offset_used
+                print(f"    (anchor offset set to {anchor_offset} from frame 0)")
 
             frame_indices.append(base_idx)
 

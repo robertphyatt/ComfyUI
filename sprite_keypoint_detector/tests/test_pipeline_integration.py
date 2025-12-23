@@ -43,11 +43,13 @@ class TestTransformPipeline:
 
         config = TransformConfig(scale_factor=1.0, pixelize_factor=1)
 
-        result = transform_frame(clothed, clothed_kpts, base, base_kpts, mask, config)
+        result, offset = transform_frame(clothed, clothed_kpts, base, base_kpts, mask, config)
 
         assert result is not None
         assert result.shape == (512, 512, 4)
         assert np.any(result[:, :, 3] > 0)  # Has some visible pixels
+        assert offset is not None  # Returns the offset used
+        assert len(offset) == 2  # (x, y) tuple
 
 
 class TestSpritesheet:

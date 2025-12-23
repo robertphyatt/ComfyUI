@@ -51,8 +51,9 @@ def scale_and_align(
     image: np.ndarray,
     image_kpts: np.ndarray,
     target_kpts: np.ndarray,
-    config: TransformConfig
-) -> Tuple[np.ndarray, np.ndarray]:
+    config: TransformConfig,
+    anchor_offset: Optional[Tuple[int, int]] = None
+) -> Tuple[np.ndarray, np.ndarray, Tuple[int, int]]:
     """Scale image and align using mean of neck and hip offsets.
 
     Args:
@@ -60,9 +61,11 @@ def scale_and_align(
         image_kpts: Keypoints for source image
         target_kpts: Target keypoints to align to
         config: Transform configuration
+        anchor_offset: If provided, use this offset instead of computing from keypoints.
+                       This ensures consistent positioning across all frames in an animation.
 
     Returns:
-        (aligned_image, aligned_keypoints)
+        (aligned_image, aligned_keypoints, offset_used) - offset_used is (offset_x, offset_y)
     """
     h, w = image.shape[:2]
     scale = config.scale_factor
@@ -74,22 +77,27 @@ def scale_and_align(
     scaled = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
     scaled_kpts = image_kpts * scale
 
-    # Compute mean offset from neck (idx 1) and mid-hip
-    # Mid-hip is mean of left_hip (idx 10) and right_hip (idx 11)
-    neck_idx = 1
-    left_hip_idx = 10
-    right_hip_idx = 11
+    if anchor_offset is not None:
+        # Use provided anchor offset for consistent positioning across frames
+        offset_x, offset_y = anchor_offset
+        mean_offset = np.array([offset_x, offset_y], dtype=np.float64)
+    else:
+        # Compute mean offset from neck (idx 1) and mid-hip
+        # Mid-hip is mean of left_hip (idx 10) and right_hip (idx 11)
+        neck_idx = 1
+        left_hip_idx = 10
+        right_hip_idx = 11
 
-    scaled_mid_hip = (scaled_kpts[left_hip_idx] + scaled_kpts[right_hip_idx]) / 2
-    target_mid_hip = (target_kpts[left_hip_idx] + target_kpts[right_hip_idx]) / 2
+        scaled_mid_hip = (scaled_kpts[left_hip_idx] + scaled_kpts[right_hip_idx]) / 2
+        target_mid_hip = (target_kpts[left_hip_idx] + target_kpts[right_hip_idx]) / 2
 
-    neck_offset = target_kpts[neck_idx] - scaled_kpts[neck_idx]
-    hip_offset = target_mid_hip - scaled_mid_hip
+        neck_offset = target_kpts[neck_idx] - scaled_kpts[neck_idx]
+        hip_offset = target_mid_hip - scaled_mid_hip
 
-    # Mean offset
-    mean_offset = (neck_offset + hip_offset) / 2
-    offset_x = int(round(mean_offset[0]))
-    offset_y = int(round(mean_offset[1]))
+        # Mean offset
+        mean_offset = (neck_offset + hip_offset) / 2
+        offset_x = int(round(mean_offset[0]))
+        offset_y = int(round(mean_offset[1]))
 
     # Create canvas and place scaled image
     canvas = np.zeros((canvas_size, canvas_size, 4), dtype=np.uint8)
@@ -109,7 +117,7 @@ def scale_and_align(
 
     aligned_kpts = scaled_kpts + mean_offset
 
-    return canvas, aligned_kpts
+    return canvas, aligned_kpts, (offset_x, offset_y)
 
 
 def apply_mask(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -863,8 +871,9 @@ def transform_frame(
     base_image: np.ndarray,
     base_kpts: np.ndarray,
     armor_mask: np.ndarray,
-    config: Optional[TransformConfig] = None
-) -> np.ndarray:
+    config: Optional[TransformConfig] = None,
+    anchor_offset: Optional[Tuple[int, int]] = None
+) -> Tuple[np.ndarray, Tuple[int, int]]:
     """Run full transform pipeline on a single frame.
 
     Args:
@@ -874,9 +883,11 @@ def transform_frame(
         base_kpts: Keypoints for base frame
         armor_mask: Mask separating armor from clothed image
         config: Transform configuration (uses defaults if None)
+        anchor_offset: If provided, use this offset for alignment instead of computing.
+                       Pass the offset from frame 0 to ensure consistent positioning.
 
     Returns:
-        Transformed armor RGBA image
+        (transformed_armor, offset_used) - offset_used can be passed to subsequent frames
     """
     if config is None:
         config = TransformConfig()
@@ -885,15 +896,15 @@ def transform_frame(
     clothed_image = _clean_ghost_pixels(clothed_image)
 
     # Step 1: Scale and align
-    aligned_clothed, aligned_kpts = scale_and_align(
-        clothed_image, clothed_kpts, base_kpts, config
+    aligned_clothed, aligned_kpts, offset_used = scale_and_align(
+        clothed_image, clothed_kpts, base_kpts, config, anchor_offset
     )
 
-    # Scale mask the same way
+    # Scale mask the same way (using the same offset for consistency)
     mask_rgba = np.zeros((*armor_mask.shape, 4), dtype=np.uint8)
     mask_rgba[:, :, 0] = armor_mask
     mask_rgba[:, :, 3] = armor_mask
-    aligned_mask, _ = scale_and_align(mask_rgba, clothed_kpts, base_kpts, config)
+    aligned_mask, _, _ = scale_and_align(mask_rgba, clothed_kpts, base_kpts, config, offset_used)
     scaled_mask = aligned_mask[:, :, 0]
 
     # Extend mask to include thin edge strips near transparency
@@ -926,7 +937,7 @@ def transform_frame(
     )
 
     # Pixelization now happens after color correction in pipeline
-    return inpainted_armor
+    return inpainted_armor, offset_used
 
 
 def transform_frame_debug(
@@ -935,11 +946,15 @@ def transform_frame_debug(
     base_image: np.ndarray,
     base_kpts: np.ndarray,
     armor_mask: np.ndarray,
-    config: Optional[TransformConfig] = None
-) -> TransformDebugOutput:
+    config: Optional[TransformConfig] = None,
+    anchor_offset: Optional[Tuple[int, int]] = None
+) -> Tuple[TransformDebugOutput, Tuple[int, int]]:
     """Run full transform pipeline with debug outputs.
 
     Same as transform_frame but returns all intermediate steps.
+
+    Returns:
+        (debug_output, offset_used) - offset_used can be passed to subsequent frames
     """
     if config is None:
         config = TransformConfig()
@@ -948,15 +963,15 @@ def transform_frame_debug(
     clothed_image = _clean_ghost_pixels(clothed_image)
 
     # Step 1: Scale and align
-    aligned_clothed, aligned_kpts = scale_and_align(
-        clothed_image, clothed_kpts, base_kpts, config
+    aligned_clothed, aligned_kpts, offset_used = scale_and_align(
+        clothed_image, clothed_kpts, base_kpts, config, anchor_offset
     )
 
-    # Scale mask the same way
+    # Scale mask the same way (using the same offset for consistency)
     mask_rgba = np.zeros((*armor_mask.shape, 4), dtype=np.uint8)
     mask_rgba[:, :, 0] = armor_mask
     mask_rgba[:, :, 3] = armor_mask
-    aligned_mask, _ = scale_and_align(mask_rgba, clothed_kpts, base_kpts, config)
+    aligned_mask, _, _ = scale_and_align(mask_rgba, clothed_kpts, base_kpts, config, offset_used)
     scaled_mask = aligned_mask[:, :, 0]
 
     # Extend mask to include thin edge strips near transparency
@@ -1022,4 +1037,4 @@ def transform_frame_debug(
         post_refine_overlap_viz=post_refine_overlap_viz,
         overlap_viz=overlap_viz,
         skeleton_viz=skeleton_viz
-    )
+    ), offset_used
