@@ -450,23 +450,24 @@ class ClothingPipeline:
             print(f"  Generated frame {base_idx:02d} from {match.matched_clothed_frame}")
 
         # === Apply Color Consensus Correction (before pixelization) ===
-        print("\n=== Applying Color Consensus Correction ===")
-
-        # Collect keypoints for all frames
-        all_keypoints = []
-        for base_idx in frame_indices:
-            base_name = f"base_frame_{base_idx:02d}.png"
-            keypoints = get_keypoints_array(base_annotations[base_name].get("keypoints", {}))
-            all_keypoints.append(keypoints)
-
-        # Build consensus and apply corrections to pre-pixelized frames
-        consensus_map = build_consensus_map(inpainted_frames, all_keypoints, global_palette)
-        print(f"  Built consensus map with {len(consensus_map)} positions")
-
-        inpainted_frames, num_corrections = apply_consensus_correction(
-            inpainted_frames, all_keypoints, global_palette, consensus_map
-        )
-        print(f"  Applied {num_corrections} color corrections")
+        # DISABLED: Experimental feature - uncomment to re-enable
+        # print("\n=== Applying Color Consensus Correction ===")
+        #
+        # # Collect keypoints for all frames
+        # all_keypoints = []
+        # for base_idx in frame_indices:
+        #     base_name = f"base_frame_{base_idx:02d}.png"
+        #     keypoints = get_keypoints_array(base_annotations[base_name].get("keypoints", {}))
+        #     all_keypoints.append(keypoints)
+        #
+        # # Build consensus and apply corrections to pre-pixelized frames
+        # consensus_map = build_consensus_map(inpainted_frames, all_keypoints, global_palette)
+        # print(f"  Built consensus map with {len(consensus_map)} positions")
+        #
+        # inpainted_frames, num_corrections = apply_consensus_correction(
+        #     inpainted_frames, all_keypoints, global_palette, consensus_map
+        # )
+        # print(f"  Applied {num_corrections} color corrections")
 
         # === Pixelization ===
         print("\n=== Applying Pixelization ===")
@@ -606,8 +607,8 @@ def main():
                        help="Skip annotation validation")
     parser.add_argument("--scale", type=float, default=1.057,
                        help="Scale factor for clothed frames")
-    parser.add_argument("--pixelize", type=int, default=3,
-                       help="Pixelization factor (1=none)")
+    parser.add_argument("--pixelize", type=int, default=2,
+                       help="Pixelization factor (1=none, 2=fine, 3=medium)")
     parser.add_argument("--palette-from", type=Path,
                        help="Reuse palette from previous output directory (loads debug/palette.png)")
     parser.add_argument("--debug", action="store_true",
