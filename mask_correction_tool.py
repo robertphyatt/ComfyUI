@@ -1,6 +1,7 @@
 # mask_correction_tool.py
 """Interactive GUI tool for correcting segmentation masks."""
 
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, Slider
@@ -421,8 +422,46 @@ def correct_all_masks(frames_dir: Path, initial_masks_dir: Path, corrected_masks
 
 
 if __name__ == "__main__":
-    frames_dir = Path("training_data/frames")
-    initial_masks_dir = Path("training_data/masks_initial")
-    corrected_masks_dir = Path("training_data/masks_corrected")
+    parser = argparse.ArgumentParser(
+        description="Interactive mask correction tool",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Default (training_data/)
+  python mask_correction_tool.py
+
+  # Custom directory
+  python mask_correction_tool.py training_data_walk_south
+
+  # Fully custom paths
+  python mask_correction_tool.py --frames my/frames --initial my/masks_initial --output my/masks_corrected
+"""
+    )
+    parser.add_argument("data_dir", type=Path, nargs="?", default=None,
+                       help="Base data directory (contains frames/, masks_initial/)")
+    parser.add_argument("--frames", type=Path, default=None,
+                       help="Frames directory (default: <data_dir>/frames)")
+    parser.add_argument("--initial", type=Path, default=None,
+                       help="Initial masks directory (default: <data_dir>/masks_initial)")
+    parser.add_argument("--output", type=Path, default=None,
+                       help="Output masks directory (default: <data_dir>/masks_corrected)")
+
+    args = parser.parse_args()
+
+    # Resolve paths
+    if args.data_dir:
+        base = args.data_dir
+    else:
+        base = Path("training_data")
+
+    frames_dir = args.frames or (base / "frames")
+    initial_masks_dir = args.initial or (base / "masks_initial")
+    corrected_masks_dir = args.output or (base / "masks_corrected")
+
+    # Validate directories exist
+    if not frames_dir.exists():
+        parser.error(f"Frames directory not found: {frames_dir}")
+    if not initial_masks_dir.exists():
+        parser.error(f"Initial masks directory not found: {initial_masks_dir}")
 
     correct_all_masks(frames_dir, initial_masks_dir, corrected_masks_dir)

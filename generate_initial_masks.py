@@ -1,6 +1,7 @@
 # generate_initial_masks.py
 """Generate initial segmentation masks using color-based segmentation."""
 
+import argparse
 import numpy as np
 import cv2
 from pathlib import Path
@@ -117,12 +118,46 @@ def generate_all_masks(frames_dir: Path, output_dir: Path):
 
 
 if __name__ == "__main__":
-    frames_dir = Path("training_data/frames")
-    output_dir = Path("training_data/masks_initial")
+    parser = argparse.ArgumentParser(
+        description="Generate initial segmentation masks using color-based detection",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Default (training_data/)
+  python generate_initial_masks.py
+
+  # Custom directory
+  python generate_initial_masks.py training_data_walk_south
+
+  # Fully custom paths
+  python generate_initial_masks.py --frames my/frames --output my/masks_initial
+"""
+    )
+    parser.add_argument("data_dir", type=Path, nargs="?", default=None,
+                       help="Base data directory (contains frames/, masks_initial/)")
+    parser.add_argument("--frames", type=Path, default=None,
+                       help="Frames directory (default: <data_dir>/frames)")
+    parser.add_argument("--output", type=Path, default=None,
+                       help="Output masks directory (default: <data_dir>/masks_initial)")
+
+    args = parser.parse_args()
+
+    # Resolve paths
+    if args.data_dir:
+        base = args.data_dir
+    else:
+        base = Path("training_data")
+
+    frames_dir = args.frames or (base / "frames")
+    output_dir = args.output or (base / "masks_initial")
+
+    # Validate directories exist
+    if not frames_dir.exists():
+        parser.error(f"Frames directory not found: {frames_dir}")
 
     print("Generating initial masks using color-based segmentation...")
     print("=" * 70)
     generate_all_masks(frames_dir, output_dir)
     print("=" * 70)
     print(f"✓ Initial masks saved to {output_dir}/")
-    print("\nNext: Use mask_correction_tool.py to fix any errors")
+    print(f"\nNext: python mask_correction_tool.py {base}")
