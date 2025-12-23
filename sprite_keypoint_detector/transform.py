@@ -18,7 +18,7 @@ class TransformConfig:
     rotation_segment_width: int = 35
     refinement_segment_width: int = 50  # Wider than rotation to capture shoulder/joint areas
     edge_width: int = 2
-    pixelize_factor: int = 3
+    pixelize_factor: int = 2  # Less blocky for higher-quality pixel art
     canvas_size: int = 512
     skip_rotation: bool = False  # Skip rotation step entirely (for good fits)
 
@@ -913,6 +913,12 @@ def transform_frame(
         rotated_armor, rotated_kpts, base_image, base_kpts, config
     )
 
+    # Step 2.6: Re-apply base silhouette mask to clean up stray pixels
+    # After refinement, some edge pixels with low alpha may remain outside
+    # the base silhouette - clip them to ensure clean edges
+    base_silhouette = base_image[:, :, 3] > 128
+    refined_armor = apply_mask(refined_armor, (base_silhouette * 255).astype(np.uint8))
+
     # Step 3: Inpaint
     inpainted_armor = apply_inpaint(
         refined_armor, aligned_clothed, base_image,
@@ -969,6 +975,12 @@ def transform_frame_debug(
     refined_armor, refined_kpts = refine_silhouette_alignment(
         rotated_armor, rotated_kpts, base_image, base_kpts, config
     )
+
+    # Step 2.6: Re-apply base silhouette mask to clean up stray pixels
+    # After refinement, some edge pixels with low alpha may remain outside
+    # the base silhouette - clip them to ensure clean edges
+    base_silhouette = base_image[:, :, 3] > 128
+    refined_armor = apply_mask(refined_armor, (base_silhouette * 255).astype(np.uint8))
 
     # Step 3: Inpaint
     inpainted_armor = apply_inpaint(
