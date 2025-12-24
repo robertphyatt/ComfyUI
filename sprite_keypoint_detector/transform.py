@@ -11,6 +11,24 @@ from scipy.ndimage import binary_dilation, binary_erosion
 from .keypoints import KEYPOINT_NAMES, NUM_KEYPOINTS
 
 
+def compute_centroid(image: np.ndarray) -> Optional[Tuple[float, float]]:
+    """Compute centroid of non-transparent pixels.
+
+    Args:
+        image: RGBA image array
+
+    Returns:
+        (x, y) centroid or None if no visible pixels
+    """
+    if image.shape[2] < 4:
+        return None
+    alpha = image[:, :, 3]
+    y_coords, x_coords = np.where(alpha > 128)
+    if len(x_coords) == 0:
+        return None
+    return (float(np.mean(x_coords)), float(np.mean(y_coords)))
+
+
 @dataclass
 class TransformConfig:
     """Configuration for the transform pipeline."""
@@ -919,19 +937,16 @@ def transform_frame(
     else:
         rotated_armor, rotated_kpts = apply_rotation(armor, aligned_kpts, base_kpts, config)
 
-    # Step 2.5: Apply base silhouette mask BEFORE refinement
-    # This prevents refinement from seeing pixels outside base that will be cropped anyway.
-    # Without this, refinement might move armor to cover doomed pixels, causing gaps.
-    base_silhouette = base_image[:, :, 3] > 128
-    masked_armor = apply_mask(rotated_armor, (base_silhouette * 255).astype(np.uint8))
-
-    # Step 2.6: Silhouette refinement (now only optimizes blue pixels, not red)
+    # Step 2.5: Silhouette refinement
+    # Refinement needs access to FULL armor (including parts extending outside base)
+    # so it can shift segments to cover gaps in the base silhouette.
     refined_armor, refined_kpts = refine_silhouette_alignment(
-        masked_armor, rotated_kpts, base_image, base_kpts, config
+        rotated_armor, rotated_kpts, base_image, base_kpts, config
     )
 
-    # Step 2.7: Re-apply base silhouette mask after refinement
-    # Refinement might move pixels outside the base silhouette
+    # Step 2.6: Apply base silhouette mask AFTER refinement
+    # Now crop to base silhouette - refinement has already positioned segments optimally
+    base_silhouette = base_image[:, :, 3] > 128
     refined_armor = apply_mask(refined_armor, (base_silhouette * 255).astype(np.uint8))
 
     # Step 3: Inpaint
@@ -990,19 +1005,16 @@ def transform_frame_debug(
     else:
         rotated_armor, rotated_kpts = apply_rotation(armor_masked, aligned_kpts, base_kpts, config)
 
-    # Step 2.5: Apply base silhouette mask BEFORE refinement
-    # This prevents refinement from seeing pixels outside base that will be cropped anyway.
-    # Without this, refinement might move armor to cover doomed pixels, causing gaps.
-    base_silhouette = base_image[:, :, 3] > 128
-    masked_armor = apply_mask(rotated_armor, (base_silhouette * 255).astype(np.uint8))
-
-    # Step 2.6: Silhouette refinement (now only optimizes blue pixels, not red)
+    # Step 2.5: Silhouette refinement
+    # Refinement needs access to FULL armor (including parts extending outside base)
+    # so it can shift segments to cover gaps in the base silhouette.
     refined_armor, refined_kpts = refine_silhouette_alignment(
-        masked_armor, rotated_kpts, base_image, base_kpts, config
+        rotated_armor, rotated_kpts, base_image, base_kpts, config
     )
 
-    # Step 2.7: Re-apply base silhouette mask after refinement
-    # Refinement might move pixels outside the base silhouette
+    # Step 2.6: Apply base silhouette mask AFTER refinement
+    # Now crop to base silhouette - refinement has already positioned segments optimally
+    base_silhouette = base_image[:, :, 3] > 128
     refined_armor = apply_mask(refined_armor, (base_silhouette * 255).astype(np.uint8))
 
     # Step 3: Inpaint
