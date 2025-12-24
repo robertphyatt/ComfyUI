@@ -385,6 +385,12 @@ class ClothingPipeline:
         # Also track frame 0's base center position to compute deltas for subsequent frames
         # This ensures armor follows base body movement through the walk cycle
         frame0_base_center = None
+        # Track frame 0's clothed source center to correct for different clothed sources
+        # Each clothed source has different inherent armor positioning - we normalize to anchor
+        anchor_clothed_center = None
+        # Track frame 0's centroid data for center-of-mass constraint
+        anchor_base_com = None   # Base body centroid from frame 0
+        anchor_armor_com = None  # Armor centroid from frame 0 (after alignment+rotation)
 
         for match in matches:
             base_idx = int(match.base_frame.split("_")[-1].replace(".png", ""))
@@ -407,22 +413,33 @@ class ClothingPipeline:
             base_mid_hip = (base_kpts[10] + base_kpts[11]) / 2  # mean of left_hip and right_hip
             base_center = (base_neck + base_mid_hip) / 2
 
+            # Compute clothed center (scaled) for this clothed source
+            # Different clothed sources have different inherent armor positions
+            clothed_neck = clothed_kpts[1] * self.config.scale_factor
+            clothed_mid_hip = ((clothed_kpts[10] + clothed_kpts[11]) / 2) * self.config.scale_factor
+            clothed_center = (clothed_neck + clothed_mid_hip) / 2
+
             # Validate critical keypoints exist (non-zero means detected)
             neck_valid = np.any(base_kpts[1] != 0)
             hips_valid = np.any(base_kpts[10] != 0) and np.any(base_kpts[11] != 0)
+            clothed_neck_valid = np.any(clothed_kpts[1] != 0)
+            clothed_hips_valid = np.any(clothed_kpts[10] != 0) and np.any(clothed_kpts[11] != 0)
 
-            # Compute adjusted offset that tracks base body movement
-            if anchor_offset is not None and frame0_base_center is not None:
-                if neck_valid and hips_valid:
+            # Compute adjusted offset that tracks base body movement AND corrects for clothed source
+            if anchor_offset is not None and frame0_base_center is not None and anchor_clothed_center is not None:
+                if neck_valid and hips_valid and clothed_neck_valid and clothed_hips_valid:
                     # Delta = how much the base center has moved from frame 0
                     base_delta = base_center - frame0_base_center
+                    # Correction = difference between anchor clothed source and this clothed source
+                    # This normalizes different clothed sources to the anchor's position
+                    clothed_correction = anchor_clothed_center - clothed_center
                     adjusted_offset = (
-                        int(round(anchor_offset[0] + base_delta[0])),
-                        int(round(anchor_offset[1] + base_delta[1]))
+                        int(round(anchor_offset[0] + base_delta[0] + clothed_correction[0])),
+                        int(round(anchor_offset[1] + base_delta[1] + clothed_correction[1]))
                     )
-                    # Only print if delta is significant
-                    if abs(base_delta[0]) > 0.5 or abs(base_delta[1]) > 0.5:
-                        print(f"    (base moved by {base_delta}, adjusted offset: {adjusted_offset})")
+                    # Only print if delta or correction is significant
+                    if abs(base_delta[0]) > 0.5 or abs(base_delta[1]) > 0.5 or abs(clothed_correction[0]) > 0.5 or abs(clothed_correction[1]) > 0.5:
+                        print(f"    (base_delta={base_delta}, clothed_corr={clothed_correction}, adjusted={adjusted_offset})")
                 else:
                     # Missing keypoints - fall back to anchor offset only
                     print(f"    WARNING: Missing keypoints in frame {base_idx}, using anchor offset only")
@@ -458,11 +475,12 @@ class ClothingPipeline:
 
             if debug:
                 # Use debug transform to get all intermediate steps
-                debug_output, offset_used = transform_frame_debug(
+                debug_output, offset_used, base_com, armor_com = transform_frame_debug(
                     clothed_frame, clothed_kpts,
                     base_frame, base_kpts,
                     mask, frame_config,
-                    adjusted_offset  # None for frame 0, then anchor + base_delta for subsequent
+                    adjusted_offset,  # None for frame 0, then anchor + base_delta for subsequent
+                    anchor_base_com, anchor_armor_com
                 )
 
                 # Save intermediate outputs (up to inpainted - color correction and final come later)
@@ -479,19 +497,23 @@ class ClothingPipeline:
                 inpainted_frames.append(debug_output.final_armor)
             else:
                 # Normal transform
-                transformed, offset_used = transform_frame(
+                transformed, offset_used, base_com, armor_com = transform_frame(
                     clothed_frame, clothed_kpts,
                     base_frame, base_kpts,
                     mask, frame_config,
-                    adjusted_offset  # None for frame 0, then anchor + base_delta for subsequent
+                    adjusted_offset,  # None for frame 0, then anchor + base_delta for subsequent
+                    anchor_base_com, anchor_armor_com
                 )
                 inpainted_frames.append(transformed)
 
-            # Capture frame 0's offset and base center as anchor for all subsequent frames
+            # Capture frame 0's offset, base center, and clothed center as anchors
             if anchor_offset is None:
                 anchor_offset = offset_used
                 frame0_base_center = base_center.copy()
-                print(f"    (anchor offset set to {anchor_offset} from frame 0, base_center={base_center})")
+                anchor_clothed_center = clothed_center.copy()
+                anchor_base_com = base_com
+                anchor_armor_com = armor_com
+                print(f"    (anchors set: offset={anchor_offset}, base_com={base_com}, armor_com={armor_com})")
 
             frame_indices.append(base_idx)
 
