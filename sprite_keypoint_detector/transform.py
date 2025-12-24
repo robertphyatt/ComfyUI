@@ -1037,8 +1037,10 @@ def transform_frame_debug(
     base_kpts: np.ndarray,
     armor_mask: np.ndarray,
     config: Optional[TransformConfig] = None,
-    anchor_offset: Optional[Tuple[int, int]] = None
-) -> Tuple[TransformDebugOutput, Tuple[int, int]]:
+    anchor_offset: Optional[Tuple[int, int]] = None,
+    anchor_base_com: Optional[Tuple[float, float]] = None,
+    anchor_armor_com: Optional[Tuple[float, float]] = None
+) -> Tuple[TransformDebugOutput, Tuple[int, int], Optional[Tuple[float, float]], Optional[Tuple[float, float]]]:
     """Run full transform pipeline with debug outputs.
 
     Same as transform_frame but returns all intermediate steps.
@@ -1075,6 +1077,15 @@ def transform_frame_debug(
         rotated_armor, rotated_kpts = armor_masked, aligned_kpts
     else:
         rotated_armor, rotated_kpts = apply_rotation(armor_masked, aligned_kpts, base_kpts, config)
+
+    # Step 2.25: Center-of-mass constraint
+    current_base_com = compute_centroid(base_image)
+    current_armor_com = compute_centroid(rotated_armor)
+
+    rotated_armor = apply_com_constraint(
+        rotated_armor, base_image,
+        anchor_base_com, anchor_armor_com
+    )
 
     # Step 2.5: Silhouette refinement
     # Refinement needs access to FULL armor (including parts extending outside base)
@@ -1128,4 +1139,4 @@ def transform_frame_debug(
         post_refine_overlap_viz=post_refine_overlap_viz,
         overlap_viz=overlap_viz,
         skeleton_viz=skeleton_viz
-    ), offset_used
+    ), offset_used, current_base_com, current_armor_com
