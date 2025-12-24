@@ -29,6 +29,61 @@ def compute_centroid(image: np.ndarray) -> Optional[Tuple[float, float]]:
     return (float(np.mean(x_coords)), float(np.mean(y_coords)))
 
 
+def apply_com_constraint(
+    armor: np.ndarray,
+    base_image: np.ndarray,
+    anchor_base_com: Optional[Tuple[float, float]],
+    anchor_armor_com: Optional[Tuple[float, float]]
+) -> np.ndarray:
+    """Shift armor so its center-of-mass delta matches base body's delta.
+
+    This corrects drift that keypoint-based alignment misses by ensuring
+    the armor sprite moves by exactly the same amount as the base body.
+
+    Args:
+        armor: Current armor image (RGBA)
+        base_image: Current base body image (RGBA)
+        anchor_base_com: Base body centroid from frame 0 (None to skip)
+        anchor_armor_com: Armor centroid from frame 0 after alignment (None to skip)
+
+    Returns:
+        Shifted armor image
+    """
+    # Skip if no anchor data (frame 0)
+    if anchor_base_com is None or anchor_armor_com is None:
+        return armor
+
+    # Compute current centroids
+    current_base_com = compute_centroid(base_image)
+    current_armor_com = compute_centroid(armor)
+
+    if current_base_com is None or current_armor_com is None:
+        return armor
+
+    # How much did base body move from frame 0?
+    base_delta_x = current_base_com[0] - anchor_base_com[0]
+    base_delta_y = current_base_com[1] - anchor_base_com[1]
+
+    # Where should armor centroid be?
+    expected_armor_x = anchor_armor_com[0] + base_delta_x
+    expected_armor_y = anchor_armor_com[1] + base_delta_y
+
+    # How much do we need to shift armor?
+    shift_x = int(round(expected_armor_x - current_armor_com[0]))
+    shift_y = int(round(expected_armor_y - current_armor_com[1]))
+
+    # Skip if no shift needed
+    if shift_x == 0 and shift_y == 0:
+        return armor
+
+    # Apply shift using translation matrix
+    h, w = armor.shape[:2]
+    M = np.float32([[1, 0, shift_x], [0, 1, shift_y]])
+    shifted = cv2.warpAffine(armor, M, (w, h), borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
+
+    return shifted
+
+
 @dataclass
 class TransformConfig:
     """Configuration for the transform pipeline."""
