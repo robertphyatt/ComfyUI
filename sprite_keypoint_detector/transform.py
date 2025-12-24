@@ -945,8 +945,10 @@ def transform_frame(
     base_kpts: np.ndarray,
     armor_mask: np.ndarray,
     config: Optional[TransformConfig] = None,
-    anchor_offset: Optional[Tuple[int, int]] = None
-) -> Tuple[np.ndarray, Tuple[int, int]]:
+    anchor_offset: Optional[Tuple[int, int]] = None,
+    anchor_base_com: Optional[Tuple[float, float]] = None,
+    anchor_armor_com: Optional[Tuple[float, float]] = None
+) -> Tuple[np.ndarray, Tuple[int, int], Optional[Tuple[float, float]], Optional[Tuple[float, float]]]:
     """Run full transform pipeline on a single frame.
 
     Args:
@@ -958,9 +960,12 @@ def transform_frame(
         config: Transform configuration (uses defaults if None)
         anchor_offset: If provided, use this offset for alignment instead of computing.
                        Pass the offset from frame 0 to ensure consistent positioning.
+        anchor_base_com: Base body centroid from frame 0 (None to skip CoM constraint)
+        anchor_armor_com: Armor centroid from frame 0 after alignment (None to skip CoM constraint)
 
     Returns:
-        (transformed_armor, offset_used) - offset_used can be passed to subsequent frames
+        (final_armor, offset_used, base_com, armor_com_after_rotation)
+        - base_com and armor_com are returned for frame 0 to establish anchors
     """
     if config is None:
         config = TransformConfig()
@@ -992,6 +997,17 @@ def transform_frame(
     else:
         rotated_armor, rotated_kpts = apply_rotation(armor, aligned_kpts, base_kpts, config)
 
+    # Step 2.25: Center-of-mass constraint
+    # Compute centroids for anchoring (frame 0) or correction (subsequent frames)
+    current_base_com = compute_centroid(base_image)
+    current_armor_com = compute_centroid(rotated_armor)
+
+    # Apply CoM constraint to eliminate keypoint drift
+    rotated_armor = apply_com_constraint(
+        rotated_armor, base_image,
+        anchor_base_com, anchor_armor_com
+    )
+
     # Step 2.5: Silhouette refinement
     # Refinement needs access to FULL armor (including parts extending outside base)
     # so it can shift segments to cover gaps in the base silhouette.
@@ -1011,7 +1027,7 @@ def transform_frame(
     )
 
     # Pixelization now happens after color correction in pipeline
-    return inpainted_armor, offset_used
+    return inpainted_armor, offset_used, current_base_com, current_armor_com
 
 
 def transform_frame_debug(
