@@ -289,7 +289,8 @@ class ClothingPipeline:
                 base_kpts_array = get_keypoints_array(base_kpts)
 
                 # For matching/scoring, we don't use anchor offset - each candidate evaluated independently
-                transformed, _ = transform_frame(
+                # Note: transform_frame returns 4 values (armor, offset, base_center, armor_center)
+                transformed, _, _, _ = transform_frame(
                     clothed_frame, clothed_kpts_array,
                     base_frame, base_kpts_array,
                     mask, self.config
@@ -388,9 +389,9 @@ class ClothingPipeline:
         # Track frame 0's clothed source center to correct for different clothed sources
         # Each clothed source has different inherent armor positioning - we normalize to anchor
         anchor_clothed_center = None
-        # Track frame 0's centroid data for center-of-mass constraint
-        anchor_base_com = None   # Base body centroid from frame 0
-        anchor_armor_com = None  # Armor centroid from frame 0 (after alignment+rotation)
+        # Track frame 0's torso center for constraint (shoulders + hips)
+        anchor_base_center = None   # Base torso center from frame 0
+        anchor_armor_center = None  # Armor torso center from frame 0
 
         for match in matches:
             base_idx = int(match.base_frame.split("_")[-1].replace(".png", ""))
@@ -475,12 +476,12 @@ class ClothingPipeline:
 
             if debug:
                 # Use debug transform to get all intermediate steps
-                debug_output, offset_used, base_com, armor_com = transform_frame_debug(
+                debug_output, offset_used, base_torso, armor_torso = transform_frame_debug(
                     clothed_frame, clothed_kpts,
                     base_frame, base_kpts,
                     mask, frame_config,
                     adjusted_offset,  # None for frame 0, then anchor + base_delta for subsequent
-                    anchor_base_com, anchor_armor_com
+                    anchor_base_center, anchor_armor_center
                 )
 
                 # Save intermediate outputs (up to inpainted - color correction and final come later)
@@ -497,12 +498,12 @@ class ClothingPipeline:
                 inpainted_frames.append(debug_output.final_armor)
             else:
                 # Normal transform
-                transformed, offset_used, base_com, armor_com = transform_frame(
+                transformed, offset_used, base_torso, armor_torso = transform_frame(
                     clothed_frame, clothed_kpts,
                     base_frame, base_kpts,
                     mask, frame_config,
                     adjusted_offset,  # None for frame 0, then anchor + base_delta for subsequent
-                    anchor_base_com, anchor_armor_com
+                    anchor_base_center, anchor_armor_center
                 )
                 inpainted_frames.append(transformed)
 
@@ -511,9 +512,9 @@ class ClothingPipeline:
                 anchor_offset = offset_used
                 frame0_base_center = base_center.copy()
                 anchor_clothed_center = clothed_center.copy()
-                anchor_base_com = base_com
-                anchor_armor_com = armor_com
-                print(f"    (anchors set: offset={anchor_offset}, base_com={base_com}, armor_com={armor_com})")
+                anchor_base_center = base_torso
+                anchor_armor_center = armor_torso
+                print(f"    (anchors set: offset={anchor_offset}, base_torso={base_torso}, armor_torso={armor_torso})")
 
             frame_indices.append(base_idx)
 

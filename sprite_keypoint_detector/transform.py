@@ -11,77 +11,93 @@ from scipy.ndimage import binary_dilation, binary_erosion
 from .keypoints import KEYPOINT_NAMES, NUM_KEYPOINTS
 
 
-def compute_centroid(image: np.ndarray) -> Optional[Tuple[float, float]]:
-    """Compute centroid of non-transparent pixels.
+def compute_torso_center(keypoints: np.ndarray) -> Optional[Tuple[float, float]]:
+    """Compute center point from shoulders and hips.
+
+    Uses keypoints 2 (left_shoulder), 3 (right_shoulder),
+    10 (left_hip), 11 (right_hip) to define a stable torso center
+    that's independent of limb positions or armor shape.
 
     Args:
-        image: RGBA image array
+        keypoints: (N, 2) array of keypoint coordinates
 
     Returns:
-        (x, y) centroid or None if no visible pixels
+        (x, y) center or None if keypoints invalid
     """
-    if image.shape[2] < 4:
+    # Keypoint indices
+    L_SHOULDER, R_SHOULDER = 2, 3
+    L_HIP, R_HIP = 10, 11
+
+    # Check we have valid keypoints (non-zero)
+    points = keypoints[[L_SHOULDER, R_SHOULDER, L_HIP, R_HIP]]
+    if np.any(points == 0):
         return None
-    alpha = image[:, :, 3]
-    y_coords, x_coords = np.where(alpha > 128)
-    if len(x_coords) == 0:
-        return None
-    return (float(np.mean(x_coords)), float(np.mean(y_coords)))
+
+    # Average of all 4 points
+    center = np.mean(points, axis=0)
+    return (float(center[0]), float(center[1]))
 
 
-def apply_com_constraint(
+def apply_torso_constraint(
     armor: np.ndarray,
-    base_image: np.ndarray,
-    anchor_base_com: Optional[Tuple[float, float]],
-    anchor_armor_com: Optional[Tuple[float, float]]
-) -> np.ndarray:
-    """Shift armor so its center-of-mass delta matches base body's delta.
+    base_kpts: np.ndarray,
+    armor_kpts: np.ndarray,
+    anchor_base_center: Optional[Tuple[float, float]],
+    anchor_armor_center: Optional[Tuple[float, float]]
+) -> Tuple[np.ndarray, Tuple[float, float], Tuple[float, float]]:
+    """Shift armor so its torso center delta matches base body's delta.
 
-    This corrects drift that keypoint-based alignment misses by ensuring
-    the armor sprite moves by exactly the same amount as the base body.
+    Uses shoulder/hip keypoints to define torso center, which is stable
+    across different armor shapes and limb positions.
 
     Args:
         armor: Current armor image (RGBA)
-        base_image: Current base body image (RGBA)
-        anchor_base_com: Base body centroid from frame 0 (None to skip)
-        anchor_armor_com: Armor centroid from frame 0 after alignment (None to skip)
+        base_kpts: Base body keypoints (N, 2)
+        armor_kpts: Armor keypoints after transform (N, 2)
+        anchor_base_center: Base torso center from frame 0 (None to skip)
+        anchor_armor_center: Armor torso center from frame 0 (None to skip)
 
     Returns:
-        Shifted armor image
+        Tuple of (shifted_armor, base_center, armor_center)
+        - armor_center is the FINAL center after any shift applied
     """
-    # Skip if no anchor data (frame 0)
-    if anchor_base_com is None or anchor_armor_com is None:
-        return armor
+    # Compute current torso centers from keypoints
+    current_base_center = compute_torso_center(base_kpts)
+    current_armor_center = compute_torso_center(armor_kpts)
 
-    # Compute current centroids
-    current_base_com = compute_centroid(base_image)
-    current_armor_com = compute_centroid(armor)
+    # If we can't compute centers, return original with None centers
+    if current_base_center is None or current_armor_center is None:
+        return armor, current_base_center, current_armor_center
 
-    if current_base_com is None or current_armor_com is None:
-        return armor
+    # Skip constraint if no anchor data (frame 0) - just return current centers
+    if anchor_base_center is None or anchor_armor_center is None:
+        return armor, current_base_center, current_armor_center
 
     # How much did base body move from frame 0?
-    base_delta_x = current_base_com[0] - anchor_base_com[0]
-    base_delta_y = current_base_com[1] - anchor_base_com[1]
+    base_delta_x = current_base_center[0] - anchor_base_center[0]
+    base_delta_y = current_base_center[1] - anchor_base_center[1]
 
-    # Where should armor centroid be?
-    expected_armor_x = anchor_armor_com[0] + base_delta_x
-    expected_armor_y = anchor_armor_com[1] + base_delta_y
+    # Where should armor center be?
+    expected_armor_x = anchor_armor_center[0] + base_delta_x
+    expected_armor_y = anchor_armor_center[1] + base_delta_y
 
     # How much do we need to shift armor?
-    shift_x = int(round(expected_armor_x - current_armor_com[0]))
-    shift_y = int(round(expected_armor_y - current_armor_com[1]))
+    shift_x = int(round(expected_armor_x - current_armor_center[0]))
+    shift_y = int(round(expected_armor_y - current_armor_center[1]))
 
     # Skip if no shift needed
     if shift_x == 0 and shift_y == 0:
-        return armor
+        return armor, current_base_center, current_armor_center
 
     # Apply shift using translation matrix
     h, w = armor.shape[:2]
     M = np.float32([[1, 0, shift_x], [0, 1, shift_y]])
     shifted = cv2.warpAffine(armor, M, (w, h), borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
 
-    return shifted
+    # The new armor center is the expected position (what we shifted to)
+    final_armor_center = (expected_armor_x, expected_armor_y)
+
+    return shifted, current_base_center, final_armor_center
 
 
 @dataclass
@@ -946,8 +962,8 @@ def transform_frame(
     armor_mask: np.ndarray,
     config: Optional[TransformConfig] = None,
     anchor_offset: Optional[Tuple[int, int]] = None,
-    anchor_base_com: Optional[Tuple[float, float]] = None,
-    anchor_armor_com: Optional[Tuple[float, float]] = None
+    anchor_base_center: Optional[Tuple[float, float]] = None,
+    anchor_armor_center: Optional[Tuple[float, float]] = None
 ) -> Tuple[np.ndarray, Tuple[int, int], Optional[Tuple[float, float]], Optional[Tuple[float, float]]]:
     """Run full transform pipeline on a single frame.
 
@@ -960,12 +976,12 @@ def transform_frame(
         config: Transform configuration (uses defaults if None)
         anchor_offset: If provided, use this offset for alignment instead of computing.
                        Pass the offset from frame 0 to ensure consistent positioning.
-        anchor_base_com: Base body centroid from frame 0 (None to skip CoM constraint)
-        anchor_armor_com: Armor centroid from frame 0 after alignment (None to skip CoM constraint)
+        anchor_base_center: Base torso center from frame 0 (None for frame 0)
+        anchor_armor_center: Armor torso center from frame 0 (None for frame 0)
 
     Returns:
-        (final_armor, offset_used, base_com, armor_com_after_rotation)
-        - base_com and armor_com are returned for frame 0 to establish anchors
+        (final_armor, offset_used, base_center, armor_center)
+        - Centers are from shoulder/hip keypoints, returned for frame 0 to establish anchors
     """
     if config is None:
         config = TransformConfig()
@@ -997,15 +1013,12 @@ def transform_frame(
     else:
         rotated_armor, rotated_kpts = apply_rotation(armor, aligned_kpts, base_kpts, config)
 
-    # Step 2.25: Center-of-mass constraint
-    # Compute centroids for anchoring (frame 0) or correction (subsequent frames)
-    current_base_com = compute_centroid(base_image)
-    current_armor_com = compute_centroid(rotated_armor)
-
-    # Apply CoM constraint to eliminate keypoint drift
-    rotated_armor = apply_com_constraint(
-        rotated_armor, base_image,
-        anchor_base_com, anchor_armor_com
+    # Step 2.25: Torso constraint (BEFORE refinement)
+    # Align torso center before refinement works on limbs
+    # Capture the centers here - these are the correct pre-refinement values
+    rotated_armor, current_base_center, current_armor_center = apply_torso_constraint(
+        rotated_armor, base_kpts, rotated_kpts,
+        anchor_base_center, anchor_armor_center
     )
 
     # Step 2.5: Silhouette refinement
@@ -1021,13 +1034,14 @@ def transform_frame(
     refined_armor = apply_mask(refined_armor, (base_silhouette * 255).astype(np.uint8))
 
     # Step 3: Inpaint
-    inpainted_armor = apply_inpaint(
+    final_armor = apply_inpaint(
         refined_armor, aligned_clothed, base_image,
         refined_kpts, base_kpts, config
     )
 
     # Pixelization now happens after color correction in pipeline
-    return inpainted_armor, offset_used, current_base_com, current_armor_com
+    # Return centers captured at step 2.25 (pre-refinement, which is correct)
+    return final_armor, offset_used, current_base_center, current_armor_center
 
 
 def transform_frame_debug(
@@ -1038,15 +1052,15 @@ def transform_frame_debug(
     armor_mask: np.ndarray,
     config: Optional[TransformConfig] = None,
     anchor_offset: Optional[Tuple[int, int]] = None,
-    anchor_base_com: Optional[Tuple[float, float]] = None,
-    anchor_armor_com: Optional[Tuple[float, float]] = None
+    anchor_base_center: Optional[Tuple[float, float]] = None,
+    anchor_armor_center: Optional[Tuple[float, float]] = None
 ) -> Tuple[TransformDebugOutput, Tuple[int, int], Optional[Tuple[float, float]], Optional[Tuple[float, float]]]:
     """Run full transform pipeline with debug outputs.
 
     Same as transform_frame but returns all intermediate steps.
 
     Returns:
-        (debug_output, offset_used) - offset_used can be passed to subsequent frames
+        (debug_output, offset_used, base_center, armor_center)
     """
     if config is None:
         config = TransformConfig()
@@ -1078,13 +1092,12 @@ def transform_frame_debug(
     else:
         rotated_armor, rotated_kpts = apply_rotation(armor_masked, aligned_kpts, base_kpts, config)
 
-    # Step 2.25: Center-of-mass constraint
-    current_base_com = compute_centroid(base_image)
-    current_armor_com = compute_centroid(rotated_armor)
-
-    rotated_armor = apply_com_constraint(
-        rotated_armor, base_image,
-        anchor_base_com, anchor_armor_com
+    # Step 2.25: Torso constraint (BEFORE refinement)
+    # Align torso center before refinement works on limbs
+    # Capture the centers here - these are the correct pre-refinement values
+    rotated_armor, current_base_center, current_armor_center = apply_torso_constraint(
+        rotated_armor, base_kpts, rotated_kpts,
+        anchor_base_center, anchor_armor_center
     )
 
     # Step 2.5: Silhouette refinement
@@ -1105,8 +1118,9 @@ def transform_frame_debug(
         refined_kpts, base_kpts, config
     )
 
-    # Pixelization now happens after color correction in pipeline
     final_armor = inpainted_armor
+
+    # Centers were captured at step 2.25 (pre-refinement, which is correct)
 
     # Create visualizations
     neck_y = int(base_kpts[1, 1])
@@ -1139,4 +1153,4 @@ def transform_frame_debug(
         post_refine_overlap_viz=post_refine_overlap_viz,
         overlap_viz=overlap_viz,
         skeleton_viz=skeleton_viz
-    ), offset_used, current_base_com, current_armor_com
+    ), offset_used, current_base_center, current_armor_center
