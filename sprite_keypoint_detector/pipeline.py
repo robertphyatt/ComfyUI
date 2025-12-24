@@ -382,6 +382,9 @@ class ClothingPipeline:
         # Track anchor offset from frame 0 for consistent positioning across all frames
         # This prevents per-frame jiggle caused by keypoint variations
         anchor_offset = None
+        # Also track frame 0's base center position to compute deltas for subsequent frames
+        # This ensures armor follows base body movement through the walk cycle
+        frame0_base_center = None
 
         for match in matches:
             base_idx = int(match.base_frame.split("_")[-1].replace(".png", ""))
@@ -395,6 +398,38 @@ class ClothingPipeline:
 
             base_kpts = get_keypoints_array(base_annotations[match.base_frame].get("keypoints", {}))
             clothed_kpts = get_keypoints_array(clothed_annotations[match.matched_clothed_frame].get("keypoints", {}))
+
+            # Compute base center (mean of neck and mid-hip) for this frame
+            # This matches the alignment logic in scale_and_align()
+            # Note: Both base_kpts and anchor_offset are in 512x512 canvas coordinates.
+            # The scale_factor only affects clothed frames, not base frames.
+            base_neck = base_kpts[1]  # neck idx
+            base_mid_hip = (base_kpts[10] + base_kpts[11]) / 2  # mean of left_hip and right_hip
+            base_center = (base_neck + base_mid_hip) / 2
+
+            # Validate critical keypoints exist (non-zero means detected)
+            neck_valid = np.any(base_kpts[1] != 0)
+            hips_valid = np.any(base_kpts[10] != 0) and np.any(base_kpts[11] != 0)
+
+            # Compute adjusted offset that tracks base body movement
+            if anchor_offset is not None and frame0_base_center is not None:
+                if neck_valid and hips_valid:
+                    # Delta = how much the base center has moved from frame 0
+                    base_delta = base_center - frame0_base_center
+                    adjusted_offset = (
+                        int(round(anchor_offset[0] + base_delta[0])),
+                        int(round(anchor_offset[1] + base_delta[1]))
+                    )
+                    # Only print if delta is significant
+                    if abs(base_delta[0]) > 0.5 or abs(base_delta[1]) > 0.5:
+                        print(f"    (base moved by {base_delta}, adjusted offset: {adjusted_offset})")
+                else:
+                    # Missing keypoints - fall back to anchor offset only
+                    print(f"    WARNING: Missing keypoints in frame {base_idx}, using anchor offset only")
+                    adjusted_offset = anchor_offset
+            else:
+                # Frame 0: will compute offset from keypoints, then store it
+                adjusted_offset = None
 
             # Load mask
             mask_path = self.masks_dir / f"mask_{clothed_idx:02d}.png"
@@ -427,7 +462,7 @@ class ClothingPipeline:
                     clothed_frame, clothed_kpts,
                     base_frame, base_kpts,
                     mask, frame_config,
-                    anchor_offset  # None for first frame, then reuse frame 0's offset
+                    adjusted_offset  # None for frame 0, then anchor + base_delta for subsequent
                 )
 
                 # Save intermediate outputs (up to inpainted - color correction and final come later)
@@ -448,14 +483,15 @@ class ClothingPipeline:
                     clothed_frame, clothed_kpts,
                     base_frame, base_kpts,
                     mask, frame_config,
-                    anchor_offset  # None for first frame, then reuse frame 0's offset
+                    adjusted_offset  # None for frame 0, then anchor + base_delta for subsequent
                 )
                 inpainted_frames.append(transformed)
 
-            # Capture frame 0's offset as anchor for all subsequent frames
+            # Capture frame 0's offset and base center as anchor for all subsequent frames
             if anchor_offset is None:
                 anchor_offset = offset_used
-                print(f"    (anchor offset set to {anchor_offset} from frame 0)")
+                frame0_base_center = base_center.copy()
+                print(f"    (anchor offset set to {anchor_offset} from frame 0, base_center={base_center})")
 
             frame_indices.append(base_idx)
 
