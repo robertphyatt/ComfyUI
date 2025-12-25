@@ -9,6 +9,20 @@ from pathlib import Path
 from typing import Tuple
 
 from .keypoints import KEYPOINT_NAMES, NUM_KEYPOINTS
+from .model import VIEW_ANGLES
+
+
+def extract_view_angle(filename: str) -> int:
+    """Extract view angle index from filename.
+
+    Looks for patterns like 'north_', 'south_', 'walk_north', 'walk_south', etc.
+    Returns index into VIEW_ANGLES list, or 0 (north) as default.
+    """
+    filename_lower = filename.lower()
+    for idx, view in enumerate(VIEW_ANGLES):
+        if view in filename_lower:
+            return idx
+    return 0  # Default to north
 
 
 class SpriteKeypointDataset(Dataset):
@@ -32,9 +46,11 @@ class SpriteKeypointDataset(Dataset):
         for img_name, data in all_annotations.items():
             keypoints = data.get("keypoints", {})
             if len(keypoints) == NUM_KEYPOINTS:
+                view_angle = extract_view_angle(img_name)
                 self.annotations.append({
                     "image": img_name,
-                    "keypoints": keypoints
+                    "keypoints": keypoints,
+                    "view_angle": view_angle
                 })
 
         print(f"Loaded {len(self.annotations)} fully annotated images")
@@ -48,7 +64,7 @@ class SpriteKeypointDataset(Dataset):
     def __len__(self) -> int:
         return len(self.annotations)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         ann = self.annotations[idx]
 
         img_path = self.image_dir / ann["image"]
@@ -61,12 +77,13 @@ class SpriteKeypointDataset(Dataset):
             keypoints.append([x / orig_size[0], y / orig_size[1]])
 
         keypoints = torch.tensor(keypoints, dtype=torch.float32)
+        view_angle = torch.tensor(ann["view_angle"], dtype=torch.long)
 
         if self.augment:
             image, keypoints = self._augment(image, keypoints)
 
         image_tensor = self.transform(image)
-        return image_tensor, keypoints
+        return image_tensor, keypoints, view_angle
 
     def _augment(self, image: Image.Image, keypoints: torch.Tensor) -> Tuple[Image.Image, torch.Tensor]:
         if torch.rand(1).item() > 0.5:

@@ -298,7 +298,7 @@ def load_seed_annotations(seed_json: Path) -> Dict:
     """Load seed annotations and convert to annotation tool format.
 
     Args:
-        seed_json: Path to seed_annotations.json (AI-generated initial keypoints)
+        seed_json: Path to seed annotations JSON (supports both wrapped and unwrapped formats)
 
     Returns:
         Dict in annotation tool format
@@ -306,9 +306,17 @@ def load_seed_annotations(seed_json: Path) -> Dict:
     with open(seed_json) as f:
         seed_data = json.load(f)
 
-    # Convert from seed format to annotation format
+    # Handle both formats:
+    # 1. Wrapped: {"annotations": {"img.png": {...}}}
+    # 2. Unwrapped: {"img.png": {...}}
+    if "annotations" in seed_data:
+        source_data = seed_data["annotations"]
+    else:
+        source_data = seed_data
+
+    # Convert to annotation format
     annotations = {}
-    for img_name, data in seed_data.get("annotations", {}).items():
+    for img_name, data in source_data.items():
         keypoints = data.get("keypoints", {})
         annotations[img_name] = {
             "image": img_name,

@@ -7,19 +7,29 @@ from typing import Tuple
 
 from .keypoints import NUM_KEYPOINTS
 
+# View angle definitions (8 directions)
+VIEW_ANGLES = ['north', 'south', 'east', 'west', 'northeast', 'northwest', 'southeast', 'southwest']
+NUM_VIEWS = len(VIEW_ANGLES)
+
 
 class SpriteKeypointDetector(nn.Module):
-    """Keypoint detector using frozen ResNet18 backbone + trainable head."""
+    """Keypoint detector using frozen ResNet18 backbone + trainable head.
 
-    def __init__(self, num_keypoints: int = NUM_KEYPOINTS, pretrained: bool = True):
+    Now includes view angle conditioning to handle different camera perspectives.
+    """
+
+    def __init__(self, num_keypoints: int = NUM_KEYPOINTS, pretrained: bool = True,
+                 use_view_conditioning: bool = True):
         """Initialize the model.
 
         Args:
             num_keypoints: Number of keypoints to detect
             pretrained: Whether to use pretrained ResNet18 weights
+            use_view_conditioning: Whether to use view angle conditioning
         """
         super().__init__()
         self.num_keypoints = num_keypoints
+        self.use_view_conditioning = use_view_conditioning
 
         # Load pretrained ResNet18 backbone
         weights = ResNet18_Weights.DEFAULT if pretrained else None
@@ -32,8 +42,12 @@ class SpriteKeypointDetector(nn.Module):
         for param in self.backbone.parameters():
             param.requires_grad = False
 
+        # View angle embedding (learnable)
+        if use_view_conditioning:
+            self.view_embedding = nn.Embedding(NUM_VIEWS, 32)
+
         # Custom keypoint regression head
-        self.keypoint_head = nn.Sequential(
+        self.conv_head = nn.Sequential(
             nn.Conv2d(512, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
@@ -48,8 +62,12 @@ class SpriteKeypointDetector(nn.Module):
 
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
+        )
 
-            nn.Linear(64, 128),
+        # Final layers - include view embedding if conditioning
+        fc_input_size = 64 + (32 if use_view_conditioning else 0)
+        self.fc_head = nn.Sequential(
+            nn.Linear(fc_input_size, 128),
             nn.ReLU(inplace=True),
             nn.Dropout(0.3),
 
@@ -61,7 +79,7 @@ class SpriteKeypointDetector(nn.Module):
 
     def _init_head_weights(self):
         """Initialize head weights."""
-        for m in self.keypoint_head.modules():
+        for m in list(self.conv_head.modules()) + list(self.fc_head.modules()):
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
@@ -73,11 +91,13 @@ class SpriteKeypointDetector(nn.Module):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, view_angle: torch.Tensor = None) -> torch.Tensor:
         """Forward pass.
 
         Args:
             x: Input tensor of shape (batch, 3, H, W)
+            view_angle: View angle indices of shape (batch,) with values in [0, NUM_VIEWS-1]
+                       0=north, 1=south, 2=east, 3=west
 
         Returns:
             Keypoint coordinates of shape (batch, num_keypoints, 2)
@@ -86,18 +106,30 @@ class SpriteKeypointDetector(nn.Module):
         with torch.no_grad():
             features = self.backbone(x)
 
-        keypoints = self.keypoint_head(features)
+        conv_features = self.conv_head(features)
+
+        if self.use_view_conditioning and view_angle is not None:
+            view_embed = self.view_embedding(view_angle)  # (batch, 32)
+            combined = torch.cat([conv_features, view_embed], dim=1)
+        else:
+            combined = conv_features
+
+        keypoints = self.fc_head(combined)
         return keypoints.view(-1, self.num_keypoints, 2)
 
-    def predict(self, x: torch.Tensor, image_size: Tuple[int, int] = (512, 512)) -> torch.Tensor:
+    def predict(self, x: torch.Tensor, view_angle: torch.Tensor = None,
+                image_size: Tuple[int, int] = (512, 512)) -> torch.Tensor:
         """Predict keypoints in pixel coordinates."""
-        normalized = self.forward(x)
+        normalized = self.forward(x, view_angle)
         scale = torch.tensor([image_size[0], image_size[1]], device=x.device, dtype=x.dtype)
         return normalized * scale
 
     def get_trainable_params(self):
-        """Get only the trainable parameters (head only)."""
-        return self.keypoint_head.parameters()
+        """Get only the trainable parameters (head + view embedding)."""
+        params = list(self.conv_head.parameters()) + list(self.fc_head.parameters())
+        if self.use_view_conditioning:
+            params += list(self.view_embedding.parameters())
+        return params
 
     def unfreeze_backbone(self, num_layers: int = 1):
         """Unfreeze the last N layers of backbone for fine-tuning."""

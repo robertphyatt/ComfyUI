@@ -17,11 +17,12 @@ from .keypoints import NUM_KEYPOINTS
 def train_epoch(model, loader, optimizer, criterion, device) -> float:
     model.train()
     total_loss = 0.0
-    for images, keypoints in loader:
+    for images, keypoints, view_angles in loader:
         images = images.to(device)
         keypoints = keypoints.to(device)
+        view_angles = view_angles.to(device)
         optimizer.zero_grad()
-        predictions = model(images)
+        predictions = model(images, view_angles)
         loss = criterion(predictions, keypoints)
         loss.backward()
         optimizer.step()
@@ -36,10 +37,11 @@ def validate(model, loader, criterion, device, image_size: Tuple[int, int] = (51
     n_samples = 0
 
     with torch.no_grad():
-        for images, keypoints in loader:
+        for images, keypoints, view_angles in loader:
             images = images.to(device)
             keypoints = keypoints.to(device)
-            predictions = model(images)
+            view_angles = view_angles.to(device)
+            predictions = model(images, view_angles)
             loss = criterion(predictions, keypoints)
             total_loss += loss.item()
 

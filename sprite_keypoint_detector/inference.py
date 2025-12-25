@@ -8,8 +8,20 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union
 import cv2
 
-from .model import SpriteKeypointDetector
+from .model import SpriteKeypointDetector, VIEW_ANGLES
 from .keypoints import KEYPOINT_NAMES, NUM_KEYPOINTS, SKELETON_CONNECTIONS, SKELETON_COLORS
+
+
+def get_view_angle_index(view_angle: str) -> int:
+    """Convert view angle string to index."""
+    view_angle = view_angle.lower()
+    if view_angle in VIEW_ANGLES:
+        return VIEW_ANGLES.index(view_angle)
+    # Try to extract from filename
+    for idx, view in enumerate(VIEW_ANGLES):
+        if view in view_angle:
+            return idx
+    return 0  # Default to north
 
 
 class SpriteKeypointPredictor:
@@ -25,7 +37,7 @@ class SpriteKeypointPredictor:
                 device = 'cpu'
         self.device = torch.device(device)
 
-        self.model = SpriteKeypointDetector(num_keypoints=NUM_KEYPOINTS)
+        self.model = SpriteKeypointDetector(num_keypoints=NUM_KEYPOINTS, use_view_conditioning=True)
         checkpoint = torch.load(model_path, map_location=self.device)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.model = self.model.to(self.device)
@@ -41,17 +53,32 @@ class SpriteKeypointPredictor:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
 
-    def predict(self, image: Union[Path, Image.Image, np.ndarray]) -> Dict[str, Tuple[int, int]]:
+    def predict(self, image: Union[Path, Image.Image, np.ndarray],
+                view_angle: str = "north") -> Dict[str, Tuple[int, int]]:
+        """Predict keypoints for an image.
+
+        Args:
+            image: Input image (path, PIL Image, or numpy array)
+            view_angle: View angle string ('north', 'south', 'east', 'west', etc.)
+                       or filename containing view angle (e.g., 'walk_south_frame01.png')
+        """
+        image_path = None
         if isinstance(image, (str, Path)):
+            image_path = str(image)
             image = Image.open(image).convert('RGB')
         elif isinstance(image, np.ndarray):
             image = Image.fromarray(image).convert('RGB')
+
+        # Get view angle index
+        view_str = image_path if image_path else view_angle
+        view_idx = get_view_angle_index(view_str)
+        view_tensor = torch.tensor([view_idx], dtype=torch.long).to(self.device)
 
         orig_size = image.size
         image_tensor = self.transform(image).unsqueeze(0).to(self.device)
 
         with torch.no_grad():
-            keypoints_normalized = self.model(image_tensor)[0]
+            keypoints_normalized = self.model(image_tensor, view_tensor)[0]
 
         keypoints_px = keypoints_normalized.cpu().numpy()
         keypoints_px[:, 0] *= orig_size[0]
