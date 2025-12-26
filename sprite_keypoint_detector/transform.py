@@ -1072,10 +1072,11 @@ def transform_frame(
     refined_armor = apply_mask(refined_armor, (base_silhouette * 255).astype(np.uint8))
 
     # Step 3: Inpaint
+    # Use refined_armor's alpha as mask - the original mask doesn't account for rotation/refinement
     final_armor = apply_inpaint(
         refined_armor, aligned_clothed, base_image,
         refined_kpts, base_kpts, config,
-        clothing_mask=armor_mask
+        clothing_mask=refined_armor[:, :, 3]
     )
 
     # Pixelization now happens after color correction in pipeline
@@ -1152,10 +1153,11 @@ def transform_frame_debug(
     refined_armor = apply_mask(refined_armor, (base_silhouette * 255).astype(np.uint8))
 
     # Step 3: Inpaint
+    # Use refined_armor's alpha as mask - the original mask doesn't account for rotation/refinement
     inpainted_armor = apply_inpaint(
         refined_armor, aligned_clothed, base_image,
         refined_kpts, base_kpts, config,
-        clothing_mask=armor_mask
+        clothing_mask=refined_armor[:, :, 3]
     )
 
     final_armor = inpainted_armor
@@ -1166,13 +1168,14 @@ def transform_frame_debug(
     neck_y = int(base_kpts[1, 1])
 
     # Pre-inpaint overlap shows what needs to be filled (before refinement)
-    pre_inpaint_overlap_viz = _create_overlap_visualization(base_image, rotated_armor, neck_y, clothing_mask=armor_mask)
+    # Use rotated_armor's alpha since that's the state at this point
+    pre_inpaint_overlap_viz = _create_overlap_visualization(base_image, rotated_armor, neck_y, clothing_mask=rotated_armor[:, :, 3])
 
     # Post-refinement overlap shows improvement from silhouette alignment
-    post_refine_overlap_viz = _create_overlap_visualization(base_image, refined_armor, neck_y, clothing_mask=armor_mask)
+    post_refine_overlap_viz = _create_overlap_visualization(base_image, refined_armor, neck_y, clothing_mask=refined_armor[:, :, 3])
 
     # Post-inpaint overlap shows final coverage (after inpainting)
-    overlap_viz = _create_overlap_visualization(base_image, final_armor, neck_y, clothing_mask=armor_mask)
+    overlap_viz = _create_overlap_visualization(base_image, final_armor, neck_y, clothing_mask=final_armor[:, :, 3])
 
     # Skeleton visualization: base skeleton (green) + armor skeleton (red) on base image
     skeleton_viz = base_image[:, :, :3].copy()
