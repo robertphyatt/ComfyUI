@@ -420,6 +420,14 @@ def correct_all_masks(frames_dir: Path, initial_masks_dir: Path, corrected_masks
     print("=" * 70)
     print(f"✓ Corrected masks saved to {corrected_masks_dir}/")
 
+    # Create .verified marker to protect against accidental overwrites
+    verified_marker = corrected_masks_dir / ".verified"
+    with open(verified_marker, "w") as f:
+        from datetime import datetime
+        f.write(f"Masks verified by user on {datetime.now().isoformat()}\n")
+        f.write(f"Total masks: {len(needs_review)}\n")
+    print(f"✓ Created verification marker: {verified_marker}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
