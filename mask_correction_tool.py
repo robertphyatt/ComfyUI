@@ -57,6 +57,7 @@ class MaskEditor:
         self.paint_mode = 1  # 1=add clothing, 0=remove clothing
         self.is_painting = False
         self.zoom_level = 1.0
+        self.view_mode = 'overlay'  # 'overlay', 'outline', 'mask_only'
 
         # Undo/redo stacks
         self.undo_stack = []
@@ -76,7 +77,7 @@ class MaskEditor:
         self.axes[1].set_title('Base Frame')
         self.axes[1].axis('off')
 
-        self.mask_display = self.axes[2].imshow(self.get_overlay(), alpha=1.0)
+        self.mask_display = self.axes[2].imshow(self.get_current_view(), alpha=1.0)
         self.axes[2].set_title('Mask Overlay (Red=Clothing)')
         self.axes[2].axis('off')
 
@@ -91,13 +92,48 @@ class MaskEditor:
         self.add_buttons()
 
     def get_overlay(self) -> np.ndarray:
-        """Create red overlay showing mask on clothed image."""
+        """Create semi-transparent red overlay showing mask on clothed image.
+
+        Uses alpha blending so the clothing is visible underneath the mask,
+        allowing verification that the mask aligns with the clothing silhouette.
+        """
         overlay = self.clothed_img.copy().astype(np.float32) / 255.0
 
-        # Red tint for masked regions
-        overlay[self.mask == 1] = [1.0, 0.0, 0.0]
+        # Semi-transparent red overlay (50% opacity) so clothing is visible
+        mask_bool = self.mask == 1
+        red = np.array([1.0, 0.3, 0.3])  # Light red tint
+        alpha = 0.5  # 50% transparency
+
+        # Blend: result = alpha * red + (1-alpha) * original
+        overlay[mask_bool] = alpha * red + (1 - alpha) * overlay[mask_bool]
 
         return overlay
+
+    def get_outline_overlay(self) -> np.ndarray:
+        """Create overlay showing just the mask edge on clothed image."""
+        overlay = self.clothed_img.copy().astype(np.float32) / 255.0
+
+        # Find mask edges using morphological gradient
+        mask_uint8 = (self.mask * 255).astype(np.uint8)
+        kernel = np.ones((3, 3), np.uint8)
+        dilated = cv2.dilate(mask_uint8, kernel, iterations=1)
+        eroded = cv2.erode(mask_uint8, kernel, iterations=1)
+        edges = dilated - eroded
+
+        # Draw red edges on overlay
+        overlay[edges > 0] = [1.0, 0.0, 0.0]
+
+        return overlay
+
+    def get_current_view(self) -> np.ndarray:
+        """Get the current view based on view_mode."""
+        if self.view_mode == 'outline':
+            return self.get_outline_overlay()
+        elif self.view_mode == 'mask_only':
+            # Show just the binary mask as white on black
+            return np.stack([self.mask.astype(np.float32)] * 3, axis=-1)
+        else:  # 'overlay' default
+            return self.get_overlay()
 
     def paint_at(self, x: int, y: int, value: int, brush_size: int):
         """Paint circular brush at position.
@@ -230,10 +266,16 @@ class MaskEditor:
         elif event.key == '0':  # Reset zoom
             self.zoom_level = 1.0
             self.apply_zoom()
+        elif event.key == 'v':  # Cycle view modes
+            modes = ['overlay', 'outline', 'mask_only']
+            current_idx = modes.index(self.view_mode)
+            self.view_mode = modes[(current_idx + 1) % len(modes)]
+            self.update_display()
+            self.update_title()
 
     def update_display(self):
         """Refresh mask overlay display."""
-        self.mask_display.set_data(self.get_overlay())
+        self.mask_display.set_data(self.get_current_view())
         self.fig.canvas.draw_idle()
 
     def update_title(self):
@@ -252,6 +294,7 @@ class MaskEditor:
 
         # Controls
         parts.append(f"Brush: {self.brush_size}")
+        parts.append(f"View: {self.view_mode} (V)")
         parts.append("Cmd+Z: Undo")
 
         self.fig.suptitle(" | ".join(parts))
@@ -395,6 +438,7 @@ def correct_all_masks(frames_dir: Path, initial_masks_dir: Path, corrected_masks
     print("  - Cmd+Shift+Z / Ctrl+Shift+Z: Redo")
     print("  - +/- keys: Zoom in/out")
     print("  - 0 key: Reset zoom to 1x")
+    print("  - 'V' key: Cycle view modes (overlay/outline/mask)")
     print("  - 'R' key: Reset to initial mask")
     print("  - 'C' key: Clear all (start from scratch)")
     print("=" * 70)
@@ -425,7 +469,9 @@ def correct_all_masks(frames_dir: Path, initial_masks_dir: Path, corrected_masks
     with open(verified_marker, "w") as f:
         from datetime import datetime
         f.write(f"Masks verified by user on {datetime.now().isoformat()}\n")
-        f.write(f"Total masks: {len(needs_review)}\n")
+        # Count how many masks exist in the output directory
+        mask_count = len(list(corrected_masks_dir.glob("mask_*.png")))
+        f.write(f"Total masks: {mask_count}\n")
     print(f"✓ Created verification marker: {verified_marker}")
 
 
