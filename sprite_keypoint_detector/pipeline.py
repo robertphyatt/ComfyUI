@@ -431,6 +431,36 @@ class ClothingPipeline:
         anchor_base_center = None   # Base torso center from frame 0
         anchor_armor_center = None  # Armor torso center from frame 0
 
+        # === Validate Masks Before Processing ===
+        print("\n=== Validating Mask Coverage ===")
+        validation_errors = []
+        for match in matches:
+            clothed_idx = int(match.matched_clothed_frame.split("_")[-1].replace(".png", ""))
+            mask_path = self.masks_dir / f"mask_{clothed_idx:02d}.png"
+
+            if not mask_path.exists():
+                validation_errors.append(f"Missing mask: {mask_path}")
+                continue
+
+            mask = cv2.imread(str(mask_path), cv2.IMREAD_UNCHANGED)
+            clothed_frame = self.reference_frames[clothed_idx]
+
+            try:
+                validate_mask_coverage(mask, clothed_frame, f"mask_{clothed_idx:02d}.png")
+            except ValueError as e:
+                validation_errors.append(str(e))
+
+        if validation_errors:
+            print("\n" + "="*70)
+            print("MASK VALIDATION FAILED - Cannot proceed")
+            print("="*70)
+            for err in validation_errors:
+                print(f"\n{err}")
+            print("\n" + "="*70)
+            raise ValueError(f"{len(validation_errors)} mask(s) failed validation. Fix masks before running pipeline.")
+
+        print(f"  All {len(matches)} masks validated successfully")
+
         for match in matches:
             base_idx = int(match.base_frame.split("_")[-1].replace(".png", ""))
             clothed_idx = int(match.matched_clothed_frame.split("_")[-1].replace(".png", ""))
