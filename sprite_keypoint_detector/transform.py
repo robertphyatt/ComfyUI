@@ -3,6 +3,7 @@
 import cv2
 import numpy as np
 import math
+import os
 from typing import Dict, Tuple, List, Optional
 from dataclasses import dataclass
 from scipy.interpolate import RBFInterpolator
@@ -103,7 +104,7 @@ def apply_torso_constraint(
 @dataclass
 class TransformConfig:
     """Configuration for the transform pipeline."""
-    scale_factor: float = 1.057
+    scale_factor: float = 1.0  # Was 1.057 but caused 541px overflow on 512px canvas
     rotation_segment_width: int = 35
     refinement_segment_width: int = 50  # Wider than rotation to capture shoulder/joint areas
     edge_width: int = 2
@@ -640,17 +641,31 @@ def refine_silhouette_alignment(
 def _get_uncovered_mask(
     base_image: np.ndarray,
     armor_image: np.ndarray,
-    neck_y: int
+    neck_y: int,
+    clothing_mask: np.ndarray = None
 ) -> np.ndarray:
-    """Get mask of base pixels not covered by armor."""
+    """Get mask of base pixels not covered by armor.
+
+    Args:
+        base_image: Base frame RGBA
+        armor_image: Armor frame RGBA
+        neck_y: Y coordinate of neck keypoint (fallback if no mask)
+        clothing_mask: Optional mask defining valid inpaint region (preferred)
+    """
     base_visible = base_image[:, :, 3] > 128
     armor_covers = armor_image[:, :, 3] > 128
     uncovered = base_visible & ~armor_covers
 
-    # Only below neck
-    h = base_image.shape[0]
-    valid_region = np.zeros((h, base_image.shape[1]), dtype=bool)
-    valid_region[neck_y:, :] = True
+    h, w = base_image.shape[:2]
+
+    if clothing_mask is not None:
+        # Use mask to define valid region - only inpaint within masked area
+        # Dilate mask slightly to include edges
+        valid_region = binary_dilation(clothing_mask > 128, iterations=3)
+    else:
+        # Fallback: only below neck (works for back view)
+        valid_region = np.zeros((h, w), dtype=bool)
+        valid_region[neck_y:, :] = True
 
     return uncovered & valid_region
 
@@ -741,7 +756,8 @@ def apply_inpaint(
     base_image: np.ndarray,
     armor_kpts: np.ndarray,
     base_kpts: np.ndarray,
-    config: TransformConfig
+    config: TransformConfig,
+    clothing_mask: np.ndarray = None
 ) -> np.ndarray:
     """Apply soft-edge texture inpainting.
 
@@ -752,12 +768,13 @@ def apply_inpaint(
         armor_kpts: Armor keypoints (after rotation)
         base_kpts: Base keypoints
         config: Transform configuration
+        clothing_mask: Optional mask defining valid inpaint region (preferred over neck_y)
 
     Returns:
         Inpainted armor image
     """
     neck_y = int(base_kpts[1, 1])
-    uncovered = _get_uncovered_mask(base_image, armor, neck_y)
+    uncovered = _get_uncovered_mask(base_image, armor, neck_y, clothing_mask)
 
     # Create interior mask for safe sampling (avoid edge pixels)
     # Use armor's actual alpha, not the mask - we want to avoid armor's edge pixels
@@ -909,7 +926,8 @@ def _draw_skeleton_on_image(
 def _create_overlap_visualization(
     base_image: np.ndarray,
     armor_image: np.ndarray,
-    neck_y: int
+    neck_y: int,
+    clothing_mask: np.ndarray = None
 ) -> np.ndarray:
     """Create blue/red/green overlap visualization.
 
@@ -923,9 +941,13 @@ def _create_overlap_visualization(
     base_visible = base_image[:, :, 3] > 128
     armor_visible = armor_image[:, :, 3] > 128
 
-    # Only consider below neck
-    valid_region = np.zeros((h, w), dtype=bool)
-    valid_region[neck_y:, :] = True
+    # Use same logic as _get_uncovered_mask for consistency
+    if clothing_mask is not None:
+        valid_region = binary_dilation(clothing_mask > 128, iterations=3)
+    else:
+        # Fallback: only below neck (works for back view)
+        valid_region = np.zeros((h, w), dtype=bool)
+        valid_region[neck_y:, :] = True
 
     # Green: armor covers base
     covered = base_visible & armor_visible & valid_region
@@ -938,6 +960,22 @@ def _create_overlap_visualization(
     # Red: floating armor (armor but no base)
     floating = ~base_visible & armor_visible & valid_region
     viz[floating] = [0, 0, 255]  # BGR so this is red
+
+    # DEBUG LOGGING - triggered by environment variable
+    if os.environ.get("DEBUG_OVERLAP") == "1":
+        debug_dir = "/tmp/overlap_debug"
+        os.makedirs(debug_dir, exist_ok=True)
+        cv2.imwrite(f"{debug_dir}/base_image.png", base_image)
+        cv2.imwrite(f"{debug_dir}/armor_image.png", armor_image)
+        cv2.imwrite(f"{debug_dir}/base_visible.png", (base_visible * 255).astype(np.uint8))
+        cv2.imwrite(f"{debug_dir}/armor_visible.png", (armor_visible * 255).astype(np.uint8))
+        print(f"[DEBUG overlap] neck_y={neck_y}")
+        print(f"[DEBUG overlap] base_visible pixels: {np.sum(base_visible)}")
+        print(f"[DEBUG overlap] armor_visible pixels: {np.sum(armor_visible)}")
+        print(f"[DEBUG overlap] covered (green): {np.sum(covered)}")
+        print(f"[DEBUG overlap] uncovered (blue): {np.sum(uncovered)}")
+        print(f"[DEBUG overlap] floating (red): {np.sum(floating)}")
+        print(f"[DEBUG overlap] Saved debug images to {debug_dir}/")
 
     return viz
 
@@ -1036,7 +1074,8 @@ def transform_frame(
     # Step 3: Inpaint
     final_armor = apply_inpaint(
         refined_armor, aligned_clothed, base_image,
-        refined_kpts, base_kpts, config
+        refined_kpts, base_kpts, config,
+        clothing_mask=armor_mask
     )
 
     # Pixelization now happens after color correction in pipeline
@@ -1115,7 +1154,8 @@ def transform_frame_debug(
     # Step 3: Inpaint
     inpainted_armor = apply_inpaint(
         refined_armor, aligned_clothed, base_image,
-        refined_kpts, base_kpts, config
+        refined_kpts, base_kpts, config,
+        clothing_mask=armor_mask
     )
 
     final_armor = inpainted_armor
@@ -1126,13 +1166,13 @@ def transform_frame_debug(
     neck_y = int(base_kpts[1, 1])
 
     # Pre-inpaint overlap shows what needs to be filled (before refinement)
-    pre_inpaint_overlap_viz = _create_overlap_visualization(base_image, rotated_armor, neck_y)
+    pre_inpaint_overlap_viz = _create_overlap_visualization(base_image, rotated_armor, neck_y, clothing_mask=armor_mask)
 
     # Post-refinement overlap shows improvement from silhouette alignment
-    post_refine_overlap_viz = _create_overlap_visualization(base_image, refined_armor, neck_y)
+    post_refine_overlap_viz = _create_overlap_visualization(base_image, refined_armor, neck_y, clothing_mask=armor_mask)
 
     # Post-inpaint overlap shows final coverage (after inpainting)
-    overlap_viz = _create_overlap_visualization(base_image, final_armor, neck_y)
+    overlap_viz = _create_overlap_visualization(base_image, final_armor, neck_y, clothing_mask=armor_mask)
 
     # Skeleton visualization: base skeleton (green) + armor skeleton (red) on base image
     skeleton_viz = base_image[:, :, :3].copy()
