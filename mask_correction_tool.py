@@ -439,6 +439,9 @@ Examples:
     )
     parser.add_argument("data_dir", type=Path, nargs="?", default=None,
                        help="Base data directory (contains frames/, masks_initial/)")
+    parser.add_argument("--animation", type=str, default=None,
+                       help="Animation name (e.g., 'walk_south'). Auto-configures paths to "
+                            "training_data/animations/<name>/. Output writes to same masks/ dir.")
     parser.add_argument("--frames", type=Path, default=None,
                        help="Frames directory (default: <data_dir>/frames)")
     parser.add_argument("--initial", type=Path, default=None,
@@ -448,15 +451,31 @@ Examples:
 
     args = parser.parse_args()
 
-    # Resolve paths
-    if args.data_dir:
+    # Resolve paths - animation flag takes precedence
+    if args.animation:
+        # Canonical animation directory structure
+        anim_dir = Path("training_data/animations") / args.animation
+        if not anim_dir.exists():
+            parser.error(f"Animation directory not found: {anim_dir}")
+
+        frames_dir = anim_dir / "frames"
+        # For animation mode, read AND write to the same masks/ directory
+        initial_masks_dir = anim_dir / "masks"
+        corrected_masks_dir = anim_dir / "masks"  # SAME directory - corrections in place
+
+        print(f"Animation mode: {args.animation}")
+        print(f"  Frames: {frames_dir}")
+        print(f"  Masks (read & write): {initial_masks_dir}")
+    elif args.data_dir:
         base = args.data_dir
+        frames_dir = args.frames or (base / "frames")
+        initial_masks_dir = args.initial or (base / "masks_initial")
+        corrected_masks_dir = args.output or (base / "masks_corrected")
     else:
         base = Path("training_data")
-
-    frames_dir = args.frames or (base / "frames")
-    initial_masks_dir = args.initial or (base / "masks_initial")
-    corrected_masks_dir = args.output or (base / "masks_corrected")
+        frames_dir = args.frames or (base / "frames")
+        initial_masks_dir = args.initial or (base / "masks_initial")
+        corrected_masks_dir = args.output or (base / "masks_corrected")
 
     # Validate directories exist
     if not frames_dir.exists():
