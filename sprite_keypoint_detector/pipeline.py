@@ -48,6 +48,44 @@ from .consistency import generate_consistency_mask
 from .consensus import build_consensus_map, apply_consensus_correction
 
 
+def validate_mask_coverage(mask: np.ndarray, clothed_frame: np.ndarray,
+                           frame_name: str, threshold: float = 0.80) -> None:
+    """Validate that mask covers enough of the clothing pixels.
+
+    Args:
+        mask: Grayscale mask image
+        clothed_frame: RGBA clothed frame
+        frame_name: Name for error messages
+        threshold: Minimum coverage ratio (0.80 = 80%)
+
+    Raises:
+        ValueError: If mask coverage is below threshold
+    """
+    # Get clothing pixels (where alpha > 128)
+    clothed_alpha = clothed_frame[:, :, 3] > 128
+    total_clothed = np.sum(clothed_alpha)
+
+    if total_clothed == 0:
+        return  # No clothing pixels to validate
+
+    # Get mask coverage
+    mask_bool = mask > 128 if len(mask.shape) == 2 else mask[:, :, 0] > 128
+
+    # Calculate how much of the clothing is covered by mask
+    covered = np.sum(clothed_alpha & mask_bool)
+    coverage = covered / total_clothed
+
+    # Head is typically ~15-20% of pixels, so 80% coverage is reasonable
+    if coverage < threshold:
+        missing = np.sum(clothed_alpha & ~mask_bool)
+        raise ValueError(
+            f"Mask validation FAILED for {frame_name}:\n"
+            f"  - Mask covers only {coverage:.1%} of clothing (threshold: {threshold:.0%})\n"
+            f"  - Missing {missing:,} pixels\n"
+            f"  - Run mask_correction_tool.py --animation <name> to fix"
+        )
+
+
 def create_debug_comparison(debug_dir: Path, frame_idx: int) -> np.ndarray:
     """Create a side-by-side comparison of all debug steps for a frame.
 
@@ -676,8 +714,8 @@ def main():
                        help="Output directory")
     parser.add_argument("--skip-validation", action="store_true",
                        help="Skip annotation validation")
-    parser.add_argument("--scale", type=float, default=1.057,
-                       help="Scale factor for clothed frames")
+    parser.add_argument("--scale", type=float, default=1.0,
+                       help="Scale factor for clothed frames (1.0 for manual masks)")
     parser.add_argument("--pixelize", type=int, default=2,
                        help="Pixelization factor (1=none, 2=fine, 3=medium)")
     parser.add_argument("--palette-from", type=Path,
