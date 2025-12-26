@@ -8,6 +8,7 @@ from PIL import Image
 from pathlib import Path
 import torchvision.transforms.functional as TF
 import argparse
+import sys
 
 
 class LightweightUNet(nn.Module):
@@ -95,22 +96,85 @@ def predict_mask(model, frame_path: Path, device):
 def main():
     """Generate masks for all complete frames using trained model."""
     # Parse arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--frames-dir', type=Path, default=Path('training_data/frames_complete'))
-    parser.add_argument('--output-dir', type=Path, default=Path('training_data/masks_predicted'))
+    parser = argparse.ArgumentParser(
+        description="Predict masks using trained U-Net model. "
+                    "SAFETY: Will not overwrite existing masks without --force."
+    )
+    parser.add_argument('--frames-dir', type=Path,
+                        default=Path('training_data/frames_complete'),
+                        help="Directory containing clothed frames")
+    parser.add_argument('--output-dir', type=Path,
+                        default=Path('training_data/masks_predicted'),
+                        help="Output directory for predicted masks (default: masks_predicted/)")
+    parser.add_argument('--animation', type=str, default=None,
+                        help="Animation name - outputs to training_data/animations/<name>/masks_predicted/")
+    parser.add_argument('--force', action='store_true',
+                        help="Force overwrite even if masks exist or .verified marker present")
     args = parser.parse_args()
+
+    # Resolve paths based on --animation flag
+    if args.animation:
+        anim_dir = Path("training_data/animations") / args.animation
+        if not anim_dir.exists():
+            parser.error(f"Animation directory not found: {anim_dir}")
+        complete_dir = anim_dir / "frames"
+        # Output to staging area, NOT the canonical masks/ directory
+        output_dir = anim_dir / "masks_predicted"
+        canonical_masks_dir = anim_dir / "masks"
+    else:
+        complete_dir = args.frames_dir
+        output_dir = args.output_dir
+        canonical_masks_dir = None
+
+    # Safety check: refuse to overwrite canonical masks without --force
+    if canonical_masks_dir and output_dir == canonical_masks_dir:
+        print("ERROR: Cannot write directly to canonical masks/ directory.")
+        print("       Predictions go to masks_predicted/ for review first.")
+        print("       Use --output-dir to specify a different location.")
+        sys.exit(1)
+
+    # Safety check: look for .verified marker
+    verified_marker = output_dir / ".verified"
+    if verified_marker.exists() and not args.force:
+        print("="*70)
+        print("SAFETY STOP: Found .verified marker in output directory")
+        print(f"  {verified_marker}")
+        print()
+        print("This means masks were manually verified. Refusing to overwrite.")
+        print("Use --force to override (will delete .verified marker)")
+        print("="*70)
+        sys.exit(1)
+
+    # Safety check: existing masks
+    output_dir.mkdir(parents=True, exist_ok=True)
+    existing_masks = list(output_dir.glob("mask_*.png"))
+    if existing_masks and not args.force:
+        print("="*70)
+        print(f"SAFETY STOP: {len(existing_masks)} existing masks found in {output_dir}")
+        print()
+        print("Refusing to overwrite without --force flag.")
+        print("If you want to regenerate, use: --force")
+        print("="*70)
+        sys.exit(1)
+
+    # If --force and .verified exists, remove the marker
+    if args.force and verified_marker.exists():
+        verified_marker.unlink()
+        print(f"Removed .verified marker: {verified_marker}")
 
     # Setup
     device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
     model_path = Path("models/clothing_segmentation_unet.pth")
-    complete_dir = args.frames_dir
-    output_dir = args.output_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load model
     print("=" * 70)
     print("PREDICTING MASKS WITH TRAINED U-NET MODEL")
     print("=" * 70)
+    print()
+    print(f"Frames: {complete_dir}")
+    print(f"Output: {output_dir}")
+    if args.force:
+        print("Mode: FORCE (overwriting existing)")
     print()
     print(f"Loading model from {model_path}...")
 
@@ -125,6 +189,10 @@ def main():
     # Predict masks
     for frame_idx in range(25):
         frame_path = complete_dir / f"clothed_frame_{frame_idx:02d}.png"
+
+        if not frame_path.exists():
+            print(f"Frame {frame_idx:02d}: SKIPPED (not found)")
+            continue
 
         # Predict mask
         mask = predict_mask(model, frame_path, device)
@@ -141,10 +209,15 @@ def main():
 
     print()
     print("=" * 70)
-    print(f"✓ All predicted masks saved to {output_dir}/")
-    print("=" * 70)
+    print(f"Predicted masks saved to {output_dir}/")
     print()
-    print("Review masks and compare to your manual corrections")
+    print("NEXT STEPS:")
+    print(f"  1. Review predictions in {output_dir}/")
+    print(f"  2. Run mask_correction_tool.py to fix any issues")
+    if canonical_masks_dir:
+        print(f"  3. Copy verified masks to canonical location:")
+        print(f"     cp {output_dir}/mask_*.png {canonical_masks_dir}/")
+    print("=" * 70)
 
 
 if __name__ == "__main__":
